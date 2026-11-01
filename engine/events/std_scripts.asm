@@ -617,6 +617,8 @@ InitializeEventsScript:
 	endcallback
 
 AskNumber1MScript:
+	closetext
+	end
 	special RandomPhoneMon
 	readvar VAR_CALLERID
 	ifequal PHONE_SCHOOLBOY_JACK, .Jack
@@ -702,6 +704,8 @@ AskNumber1MScript:
 	end
 
 AskNumber2MScript:
+	closetext
+	end
 	special RandomPhoneMon
 	readvar VAR_CALLERID
 	ifequal PHONE_SCHOOLBOY_JACK, .Jack
@@ -918,6 +922,8 @@ NumberAcceptedMScript:
 	end
 
 NumberDeclinedMScript:
+	closetext
+	end
 	readvar VAR_CALLERID
 	ifequal PHONE_SCHOOLBOY_JACK, .Jack
 	ifequal PHONE_SAILOR_HUEY, .Huey
@@ -1406,6 +1412,8 @@ RematchGiftMScript:
 	end
 
 AskNumber1FScript:
+	closetext
+	end
 	readvar VAR_CALLERID
 	ifequal PHONE_POKEFAN_BEVERLY, .Beverly
 	ifequal PHONE_COOLTRAINERF_BETH, .Beth
@@ -1442,6 +1450,8 @@ AskNumber1FScript:
 	end
 
 AskNumber2FScript:
+	closetext
+	end
 	readvar VAR_CALLERID
 	ifequal PHONE_POKEFAN_BEVERLY, .Beverly
 	ifequal PHONE_COOLTRAINERF_BETH, .Beth
@@ -1537,6 +1547,8 @@ NumberAcceptedFScript:
 	end
 
 NumberDeclinedFScript:
+	closetext
+	end
 	readvar VAR_CALLERID
 	ifequal PHONE_POKEFAN_BEVERLY, .Beverly
 	ifequal PHONE_COOLTRAINERF_BETH, .Beth

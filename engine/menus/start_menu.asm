@@ -313,12 +313,7 @@ endr
 	call .AppendMenuList
 .no_pack
 
-	ld hl, wPokegearFlags
-	bit POKEGEAR_OBTAINED_F, [hl]
-	jr z, .no_pokegear
-	ld a, STARTMENUITEM_POKEGEAR
-	call .AppendMenuList
-.no_pokegear
+; Salt Crystal: the Pokegear no longer exists, so it is never listed.
 
 	ld a, STARTMENUITEM_STATUS
 	call .AppendMenuList

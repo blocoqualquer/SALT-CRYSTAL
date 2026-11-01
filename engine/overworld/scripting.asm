@@ -618,8 +618,8 @@ Script_hangup:
 	ret
 
 Script_askforphonenumber:
-	call YesNoBox
-	jr c, .refused
+; Salt Crystal: nobody has a phone, so every request is silently refused.
+	jr .refused
 	call GetScriptByte
 	ld c, a
 	farcall AddPhoneNumber

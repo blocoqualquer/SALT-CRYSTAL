@@ -36,34 +36,12 @@ MeetMomScript:
 	opentext
 	writetext ElmsLookingForYouText
 	promptbutton
-	getstring STRING_BUFFER_4, PokegearName
-	scall PlayersHouse1FReceiveItemStd
-	setflag ENGINE_POKEGEAR
-	setflag ENGINE_PHONE_CARD
-	addcellnum PHONE_MOM
 	setscene SCENE_PLAYERSHOUSE1F_NOOP
 	setevent EVENT_PLAYERS_HOUSE_MOM_1
 	clearevent EVENT_PLAYERS_HOUSE_MOM_2
-	writetext MomGivesPokegearText
-	promptbutton
-	writetext ComeHomeForDSTText
-	yesorno
-	iffalse .ExplainPhone
-	sjump .KnowPhone
-
-.KnowPhone:
-	writetext KnowTheInstructionsText
-	promptbutton
-	sjump .FinishPhone
-
-.ExplainPhone:
-	writetext DontKnowTheInstructionsText
-	promptbutton
 	sjump .FinishPhone
 
 .FinishPhone:
-	writetext InstructionsNextText
-	waitbutton
 	closetext
 	checkevent EVENT_TEMPORARY_UNTIL_MAP_RELOAD_1
 	iftrue .FromRight
@@ -205,14 +183,6 @@ ElmsLookingForYouText:
 	para "He said he wanted"
 	line "you to do some-"
 	cont "thing for him."
-
-	para "Oh! I almost for-"
-	line "got! Your #MON"
-
-	para "GEAR is back from"
-	line "the repair shop."
-
-	para "Here you go!"
 	done
 
 MomGivesPokegearText:

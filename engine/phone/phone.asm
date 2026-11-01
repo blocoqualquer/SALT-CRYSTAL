@@ -108,6 +108,9 @@ BrokenPlaceFarString:
 
 CheckPhoneCall::
 ; Check if the phone is ringing in the overworld.
+; Salt Crystal: there are no phones anymore.
+	xor a
+	ret
 
 	call CheckStandingOnEntrance
 	jr z, .no_call
@@ -240,6 +243,11 @@ GetAvailableCallers:
 	ret
 
 CheckSpecialPhoneCall::
+; Salt Crystal: there are no phones anymore.
+	xor a
+	ret
+
+_CheckSpecialPhoneCall_Unused:
 	ld a, [wSpecialPhoneCallID]
 	and a
 	jr z, .NoPhoneCall
