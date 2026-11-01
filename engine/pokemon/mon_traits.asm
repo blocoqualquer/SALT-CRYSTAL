@@ -546,8 +546,15 @@ SaltTraitTable:
 
 SaltGetHunger:
 ; Hunger of the Pokemon being shown, 0-100.
-; TODO: real hunger storage for the party. Always full for now.
-	ld a, 100
+; The party struct stores how much hunger was lost (0 = full).
+	ld a, [wTempMon + MON_HUNGER_LOST]
+	cp HUNGER_MAX
+	jr c, .ok
+	ld a, HUNGER_MAX
+.ok
+	ld b, a
+	ld a, HUNGER_MAX
+	sub b
 	ret
 
 SaltDrawHungerBar::

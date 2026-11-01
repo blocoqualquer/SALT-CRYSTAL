@@ -669,6 +669,7 @@ SendGetMonIntoFromBox:
 	ld hl, MON_STATUS
 	add hl, bc
 	xor a
+	ld [hli], a
 	ld [hl], a
 	ld hl, MON_HP
 	add hl, bc

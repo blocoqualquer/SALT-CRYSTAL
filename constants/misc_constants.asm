@@ -57,6 +57,10 @@ DEF NUM_OW_WEATHERS EQU const_value
 ; weather is re-rolled every this many game hours
 DEF WEATHER_ROLL_HOURS EQU 3
 
+; Salt Crystal: party Pokemon lose 1 hunger point about every 23 seconds
+DEF HUNGER_FRAMES EQU 1400
+DEF HUNGER_MAX    EQU 100
+
 ; time of day boundaries
 DEF MORN_HOUR EQU 4  ; 4 AM
 DEF DAY_HOUR  EQU 10 ; 10 AM

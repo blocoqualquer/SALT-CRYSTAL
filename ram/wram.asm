@@ -3040,6 +3040,11 @@ wCurDay:: db
 ; Salt Crystal: current overworld weather (OW_WEATHER_*)
 wWeather:: db
 
+; Salt Crystal: frames until the next hunger tick, and a pending warning
+wHungerFrames:: dw
+wHungerWarning:: db ; 0 none, else warning level 1-4
+wHungerWarnMon:: db ; party index
+
 wObjectFollow_Leader:: db
 wObjectFollow_Follower:: db
 wCenteredObject:: db

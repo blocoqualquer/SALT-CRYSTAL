@@ -16,6 +16,12 @@ InitGameClock::
 	ld [wWeather], a
 	ldh a, [hVBlankCounter]
 	ldh [hClockLastVBlank], a
+	ld a, LOW(HUNGER_FRAMES)
+	ld [wHungerFrames], a
+	ld a, HIGH(HUNGER_FRAMES)
+	ld [wHungerFrames + 1], a
+	xor a
+	ld [wHungerWarning], a
 	ret
 
 AdvanceGameHour::
@@ -202,3 +208,149 @@ StartMenu_PrintClock:
 	db "Oct@"
 	db "Nov@"
 	db "Dec@"
+
+SaltHungerTick::
+; Every party Pokemon (eggs excepted) loses 1 hunger point. The first
+; one to cross a warning threshold queues a message.
+	ld a, [wPartyCount]
+	and a
+	ret z
+	ld c, a
+	ld b, 0
+.loop
+	push bc
+	ld hl, wPartySpecies
+	ld e, b
+	ld d, 0
+	add hl, de
+	ld a, [hl]
+	cp EGG
+	jr z, .next
+	ld hl, wPartyMon1 + MON_HUNGER_LOST
+	ld a, b
+	ld bc, PARTYMON_STRUCT_LENGTH
+	call AddNTimes
+	ld a, [hl]
+	cp HUNGER_MAX
+	jr nc, .next
+	inc a
+	ld [hl], a
+	ld d, a
+	ld a, HUNGER_MAX
+	sub d ; hunger left
+	ld e, 1
+	cp 50
+	jr z, .warn
+	inc e
+	cp 25
+	jr z, .warn
+	inc e
+	cp 10
+	jr z, .warn
+	inc e
+	and a
+	jr nz, .next
+.warn
+	ld a, [wHungerWarning]
+	and a
+	jr nz, .next
+	ld a, e
+	ld [wHungerWarning], a
+	pop bc
+	push bc
+	ld a, b
+	ld [wHungerWarnMon], a
+.next
+	pop bc
+	inc b
+	dec c
+	jr nz, .loop
+	ret
+
+CheckHungerWarning::
+; Called with the other overworld time events: starts the warning
+; script if a Pokemon got hungry. Returns carry if it did.
+	ld a, [wHungerWarning]
+	and a
+	ret z
+	dec a
+	ld e, a
+	ld d, 0
+	ld hl, .Scripts
+	add hl, de
+	add hl, de
+	ld a, [hli]
+	ld h, [hl]
+	ld l, a
+	push hl
+	xor a
+	ld [wHungerWarning], a
+	ld a, [wHungerWarnMon]
+	ld hl, wPartyMonNicknames
+	call GetNickname
+; the text engine reuses wStringBuffer1, so keep the name in buffer 3
+	ld hl, wStringBuffer1
+	ld de, wStringBuffer3
+	ld bc, MON_NAME_LENGTH
+	call CopyBytes
+	pop hl
+	ld a, BANK(HungerGrowlScript)
+	jp CallScript
+
+.Scripts:
+	dw HungerGrowlScript
+	dw HungerRumbleScript
+	dw HungerWeakScript
+	dw HungerStarvingScript
+
+HungerGrowlScript:
+	opentext
+	writetext HungerGrowlText
+	waitbutton
+	closetext
+	end
+
+HungerRumbleScript:
+	opentext
+	writetext HungerRumbleText
+	waitbutton
+	closetext
+	end
+
+HungerWeakScript:
+	opentext
+	writetext HungerWeakText
+	waitbutton
+	closetext
+	end
+
+HungerStarvingScript:
+	opentext
+	writetext HungerStarvingText
+	waitbutton
+	closetext
+	end
+
+HungerGrowlText:
+	text_ram wStringBuffer3
+	text "'s belly"
+	line "is growling."
+	done
+
+HungerRumbleText:
+	text_ram wStringBuffer3
+	text "'s belly"
+	line "rumbles loudly!"
+	done
+
+HungerWeakText:
+	text_ram wStringBuffer3
+	text " looks weak"
+	line "from hunger!"
+	done
+
+HungerStarvingText:
+	text_ram wStringBuffer3
+	text " is"
+	line "starving!"
+	done

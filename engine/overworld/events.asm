@@ -466,6 +466,12 @@ CheckTimeEvents:
 	farcall CheckPokerusTick
 	farcall CheckPhoneCall
 	ret c
+	farcall CheckHungerWarning
+	jr nc, .nothing
+; farcall doesn't keep a, and PlayerEvents needs the event number in it
+	ld a, PLAYEREVENT_MAPSCRIPT
+	scf
+	ret
 
 .nothing
 	xor a

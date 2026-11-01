@@ -73,8 +73,26 @@ TickGameClock::
 	ld b, a
 .loop
 	call AdvanceClockFrame
+	call AdvanceHungerFrame
 	dec b
 	jr nz, .loop
+	ret
+
+AdvanceHungerFrame:
+; Count down to the next hunger tick (bc is preserved).
+	ld hl, wHungerFrames
+	ld a, [hl]
+	sub 1
+	ld [hli], a
+	ld a, [hl]
+	sbc 0
+	ld [hl], a
+	ret nc
+	ld hl, wHungerFrames
+	ld a, LOW(HUNGER_FRAMES)
+	ld [hli], a
+	ld [hl], HIGH(HUNGER_FRAMES)
+	farcall SaltHungerTick
 	ret
 
 AdvanceClockFrame:
