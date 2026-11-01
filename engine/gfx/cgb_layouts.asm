@@ -243,6 +243,15 @@ _CGB_StatsScreenHPPals:
 	ld a, $5 ; blue page palette
 	call FillBoxCGB
 
+; Salt Crystal: the hunger bar (rows 10-11) is drawn in red
+	ld hl, HPBarPals + 2 * 4 ; red
+	ld de, wBGPals1 palette 6
+	call LoadPalette_White_Col1_Col2_Black
+	hlcoord 0, 10, wAttrmap
+	lb bc, 2, 9
+	ld a, $6
+	call FillBoxCGB
+
 	call ApplyAttrmap
 	call ApplyPals
 	ld a, TRUE

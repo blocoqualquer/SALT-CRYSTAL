@@ -2,5 +2,11 @@
 	RGB 31, 19, 31
 ; green
 	RGB 21, 31, 14
-; blue
+; cyan (the old blue page)
 	RGB 17, 31, 31
+; yellow (Salt Crystal: body)
+	RGB 31, 31, 03
+; blue (Salt Crystal: mind)
+	RGB 06, 12, 31
+; red (Salt Crystal: traits)
+	RGB 31, 06, 06

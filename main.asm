@@ -693,3 +693,8 @@ SECTION "Stadium 2 Checksums", ROMX[$7DE0], BANK[$7F]
 ; If it is removed, also remove the "tools/stadium" command in the Makefile.
 
 	ds $220
+
+
+SECTION "Salt Pokemon", ROMX
+
+INCLUDE "engine/pokemon/mon_traits.asm"

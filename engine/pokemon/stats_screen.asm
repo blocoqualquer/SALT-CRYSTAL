@@ -1,10 +1,13 @@
 	const_def 1
-	const PINK_PAGE  ; 1
-	const GREEN_PAGE ; 2
-	const BLUE_PAGE  ; 3
+	const PINK_PAGE   ; 1
+	const GREEN_PAGE  ; 2
+	const CYAN_PAGE   ; 3 (the old blue page: ID, OT and stats)
+	const YELLOW_PAGE ; 4 Salt Crystal: body
+	const BLUE_PAGE   ; 5 Salt Crystal: mind
+	const RED_PAGE    ; 6 Salt Crystal: traits
 DEF NUM_STAT_PAGES EQU const_value - 1
 
-DEF STAT_PAGE_MASK EQU %00000011
+DEF STAT_PAGE_MASK EQU %00000111
 	const_def 4
 	const STATS_SCREEN_PLACE_FRONTPIC ; 4
 	const STATS_SCREEN_ANIMATE_MON    ; 5
@@ -379,11 +382,11 @@ StatsScreen_JoypadAction:
 
 .a_button
 	ld a, c
-	cp BLUE_PAGE ; last page
+	cp RED_PAGE ; last page
 	jr z, .b_button
 .d_right
 	inc c
-	ld a, BLUE_PAGE ; last page
+	ld a, RED_PAGE ; last page
 	cp c
 	jr nc, .set_page
 	ld c, PINK_PAGE ; first page
@@ -392,7 +395,7 @@ StatsScreen_JoypadAction:
 .d_left
 	dec c
 	jr nz, .set_page
-	ld c, BLUE_PAGE ; last page
+	ld c, RED_PAGE ; last page
 	jr .set_page
 
 .done
@@ -579,17 +582,21 @@ StatsScreen_LoadGFX:
 	table_width 2
 	dw LoadPinkPage
 	dw LoadGreenPage
+	dw LoadCyanPage
+	dw LoadYellowPage
 	dw LoadBluePage
+	dw LoadRedPage
 	assert_table_length NUM_STAT_PAGES
 
 LoadPinkPage:
-	hlcoord 0, 9
+	hlcoord 0, 8
 	ld b, $0
 	predef DrawPlayerHP
-	hlcoord 8, 9
+	hlcoord 8, 8
 	ld [hl], $41 ; right HP/exp bar end cap
+	farcall SaltDrawHungerBar
 	ld de, .Status_Type
-	hlcoord 0, 12
+	hlcoord 0, 13
 	call PlaceString
 	ld a, [wTempMonPokerusStatus]
 	ld b, a
@@ -598,13 +605,13 @@ LoadPinkPage:
 	ld a, b
 	and $f0
 	jr z, .NotImmuneToPkrs
-	hlcoord 8, 8
+	hlcoord 8, 9
 	ld [hl], '.' ; Pokérus immunity dot
 .NotImmuneToPkrs:
 	ld a, [wMonType]
 	cp BOXMON
 	jr z, .StatusOK
-	hlcoord 6, 13
+	hlcoord 6, 14
 	push hl
 	ld de, wTempMonStatus
 	predef PlaceStatusString
@@ -613,14 +620,14 @@ LoadPinkPage:
 	jr .StatusOK
 .HasPokerus:
 	ld de, .PkrsStr
-	hlcoord 1, 13
+	hlcoord 1, 14
 	call PlaceString
 	jr .done_status
 .StatusOK:
 	ld de, .OK_str
 	call PlaceString
 .done_status
-	hlcoord 1, 15
+	hlcoord 1, 16
 	predef PrintMonTypes
 	hlcoord 9, 8
 	ld de, SCREEN_WIDTH
@@ -769,7 +776,20 @@ LoadGreenPage:
 .Move:
 	db "MOVE@"
 
+; Salt Crystal: the new pages live in their own bank.
+LoadYellowPage:
+	farcall SaltLoadBodyPage
+	ret
+
 LoadBluePage:
+	farcall SaltLoadMindPage
+	ret
+
+LoadRedPage:
+	farcall SaltLoadTraitsPage
+	ret
+
+LoadCyanPage:
 	call .PlaceOTInfo
 	hlcoord 10, 8
 	ld de, SCREEN_WIDTH
@@ -1121,14 +1141,22 @@ StatsScreen_LoadPageIndicators:
 	hlcoord 17, 5
 	ld a, $36 ; " " " "
 	call .load_square
+; Salt Crystal: the squares show pages max(1, page - 2) to +2, so
+; the selected one is the first, second or third square.
+	push de
 	ld a, c
-	cp GREEN_PAGE
+	cp 4
+	jr c, .got_slot
+	ld a, 3
+.got_slot
+	dec a
+	add a ; 2 tiles per square
+	ld e, a
+	ld d, 0
+	hlcoord 13, 5
+	add hl, de
+	pop de
 	ld a, $3a ; first of 4 large square tiles
-	hlcoord 13, 5 ; PINK_PAGE (< GREEN_PAGE)
-	jr c, .load_square
-	hlcoord 15, 5 ; GREEN_PAGE (= GREEN_PAGE)
-	jr z, .load_square
-	hlcoord 17, 5 ; BLUE_PAGE (> GREEN_PAGE)
 .load_square
 	push bc
 	ld [hli], a

@@ -385,9 +385,41 @@ LoadStatsScreenPals:
 	ld a, [hli]
 	ld [wBGPals1 palette 0], a
 	ld [wBGPals1 palette 2], a
+	ld [wBGPals1 palette 6], a ; Salt Crystal: hunger bar background
 	ld a, [hl]
 	ld [wBGPals1 palette 0 + 1], a
 	ld [wBGPals1 palette 2 + 1], a
+	ld [wBGPals1 palette 6 + 1], a
+
+; Salt Crystal: the three page squares show a window of the six pages,
+; starting at max(1, page - 2) so the selected page is at most third.
+	ld a, [wStatsScreenFlags]
+	and %00000111
+	sub 2
+	jr z, .first
+	jr nc, .got_start
+.first
+	ld a, 1
+.got_start
+	dec a
+	add a
+	add a
+	add a ; * 8 bytes per palette
+	ld e, a
+	ld d, 0
+	ld hl, StatsScreenPagePals
+	add hl, de
+	ld de, wBGPals1 palette 3
+	ld bc, 3 palettes
+.copy
+	ld a, [hli]
+	ld [de], a
+	inc de
+	dec bc
+	ld a, b
+	or c
+	jr nz, .copy
+
 	pop af
 	ldh [rWBK], a
 	call ApplyPals
