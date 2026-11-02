@@ -350,9 +350,32 @@ SaltLoadMindPage::
 	ld de, .SuperegoString
 	hlcoord 0, 13
 	call PlaceString
+	ld a, [wCurSpecies]
+	cp HUMAN
+	jr z, .human_labels
 	ld de, .AlignmentString
 	hlcoord 0, 16
 	call PlaceString
+	jr .labels_done
+.human_labels
+; the player also has a fetish; alignment moves down a row
+	ld de, .FetishString
+	hlcoord 0, 15
+	call PlaceString
+	ld a, SALT_ATTR_FETISH
+	ld b, 16
+	call SaltGetAttr
+	ld hl, SaltFetishNames
+	ld bc, 14
+	call AddNTimes
+	ld d, h
+	ld e, l
+	hlcoord 7, 15
+	call PlaceString
+	ld de, .AlignmentString
+	hlcoord 0, 17
+	call PlaceString
+.labels_done
 
 	ld a, SALT_ATTR_DRIVE
 	hlcoord 9, 9
@@ -373,6 +396,11 @@ SaltLoadMindPage::
 	ld d, h
 	ld e, l
 	hlcoord 17, 16
+	ld a, [wCurSpecies]
+	cp HUMAN
+	jr nz, .place_alignment
+	hlcoord 17, 17
+.place_alignment
 	call PlaceString
 	ret
 
@@ -397,6 +425,8 @@ SaltLoadMindPage::
 	db "SUPEREGO@"
 .AlignmentString:
 	db "ALIGNMENT@"
+.FetishString:
+	db "FETISH@"
 
 .LevelNames:
 	fixed_str "Low", 7
@@ -730,10 +760,6 @@ SaltLoadHumanBodyPage:
 .got_intimate
 	ld [wSaltScratch + SALT_INTIMATE], a
 
-	ld a, SALT_ATTR_FETISH
-	ld b, 16
-	call SaltGetAttr
-	ld [wSaltScratch + SALT_FETISH], a
 	pop bc
 	push bc
 
@@ -772,9 +798,6 @@ SaltLoadHumanBodyPage:
 	ld de, .ManhoodString
 .cup_label
 	hlcoord 7, 14
-	call PlaceString
-	ld de, .FetishString
-	hlcoord 7, 15
 	call PlaceString
 
 ; values
@@ -835,7 +858,7 @@ SaltLoadHumanBodyPage:
 	call PrintNum
 	ld de, .CmString
 	call PlaceString
-	jr .fetish
+	ret
 .print_cup
 	ld a, [wSaltScratch + SALT_INTIMATE]
 	ld hl, .CupNames
@@ -846,15 +869,6 @@ SaltLoadHumanBodyPage:
 	hlcoord 14, 14
 	call PlaceString
 
-.fetish
-	ld a, [wSaltScratch + SALT_FETISH]
-	ld hl, .FetishNames
-	ld bc, 14
-	call AddNTimes
-	ld d, h
-	ld e, l
-	hlcoord 7, 16
-	call PlaceString
 	ret
 
 .BodyStatsString:
@@ -868,7 +882,6 @@ SaltLoadHumanBodyPage:
 .ChestString:  db "CHEST@"
 .CupString:    db "CUP@"
 .ManhoodString: db "MANHOOD@"
-.FetishString: db "FETISH@"
 .CmString:     db "cm@"
 .KgString:     db "kg@"
 
@@ -883,7 +896,8 @@ SaltLoadHumanBodyPage:
 	fixed_str "G", 3
 	fixed_str "H", 3
 
-.FetishNames:
+
+SaltFetishNames:
 	fixed_str "Rotten fruit", 14
 	fixed_str "Moustaches", 14
 	fixed_str "Wet socks", 14

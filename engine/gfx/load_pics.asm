@@ -107,6 +107,7 @@ GetFrontpicPointer:
 	cp UNOWN
 	jr z, .unown
 	ld a, [wCurPartySpecies]
+	call SaltPicSpecies
 	ld d, BANK(PokemonPicPointers)
 	jr .ok
 .unown
@@ -211,6 +212,7 @@ GetMonBackpic:
 	assert PokemonPicPointers == UnownPicPointers
 	ld hl, PokemonPicPointers
 	ld a, b
+	call SaltPicSpecies
 	ld d, BANK(PokemonPicPointers)
 	cp UNOWN
 	jr nz, .ok
@@ -487,4 +489,20 @@ endr
 	dec c
 	jr nz, .right_loop
 	pop bc
+	ret
+
+SaltPicSpecies:
+; Salt Crystal: a = species. The player's HUMAN uses the girl's pic
+; when playing as a girl. Flags and other registers are kept except a.
+	cp HUMAN
+	ret nz
+	push af
+	ld a, [wPlayerGender]
+	and a
+	jr z, .boy
+	pop af
+	ld a, HUMAN_GIRL
+	ret
+.boy
+	pop af
 	ret

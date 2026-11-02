@@ -793,6 +793,18 @@ CGBCopyTwoPredefObjectPals: ; unreferenced
 	ret
 
 _GetMonPalettePointer:
+	cp HUMAN
+	jr nz, .not_human
+	push af
+	ld a, [wPlayerGender]
+	and a
+	jr z, .boy
+	pop af
+	ld a, HUMAN_GIRL
+	jr .not_human
+.boy
+	pop af
+.not_human
 	ld l, a
 	ld h, 0
 	add hl, hl

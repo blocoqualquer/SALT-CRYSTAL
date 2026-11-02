@@ -258,3 +258,5 @@ PokemonPicPointers::
 	assert_table_length NUM_POKEMON
 	dba_pics EggPic ; Egg has no back sprite
 	assert_table_length EGG
+	dba_pics HumanGirlFrontpic, HumanGirlBackpic ; Salt Crystal: HUMAN when the player is a girl
+	assert_table_length HUMAN_GIRL

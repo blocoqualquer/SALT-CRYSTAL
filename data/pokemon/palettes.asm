@@ -527,12 +527,12 @@ INCLUDE "gfx/pokemon/egg/shiny.pal"
 
 	assert_table_length EGG + 1
 
-; 254
-	RGB 30, 26, 11
-	RGB 23, 16, 00
+; 254 (HUMAN_GIRL)
+	RGB 31, 21, 14
+	RGB 07, 09, 26
 ; 254 shiny
-	RGB 30, 26, 11
-	RGB 23, 16, 00
+	RGB 20, 26, 11
+	RGB 10, 17, 06
 
 ; 255
 	RGB 23, 23, 23

@@ -274,6 +274,7 @@ DEF JOHTO_POKEMON EQU const_value
 	const HUMAN      ; fc (Salt Crystal: the player)
 DEF NUM_POKEMON EQU const_value - 1
 	const EGG        ; fd
+	const HUMAN_GIRL ; fe (Salt Crystal: pic and palette index of HUMAN for a girl)
 
 ; Unown forms
 ; indexes for:

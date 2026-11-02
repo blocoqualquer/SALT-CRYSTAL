@@ -782,6 +782,8 @@ SECTION "Pics 20", ROMX
 
 HumanFrontpic:       INCBIN "gfx/pokemon/human/front.animated.2bpp.lz"
 HumanBackpic:        INCBIN "gfx/pokemon/human/back.2bpp.lz"
+HumanGirlFrontpic:   INCBIN "gfx/pokemon/human_girl/front.animated.2bpp.lz"
+HumanGirlBackpic:    INCBIN "gfx/pokemon/human_girl/back.2bpp.lz"
 
 SECTION "Pics 21", ROMX
 
