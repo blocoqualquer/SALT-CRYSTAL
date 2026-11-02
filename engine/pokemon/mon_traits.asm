@@ -15,6 +15,11 @@ DEF SALT_ATTR_ALIGNMENT EQU 6
 DEF SALT_ATTR_TRAIT     EQU 7
 DEF SALT_ATTR_SIGN      EQU 8
 DEF SALT_ATTR_TRAITTYPE EQU 9
+DEF SALT_ATTR_WAIST     EQU 10
+DEF SALT_ATTR_HIPS      EQU 11
+DEF SALT_ATTR_BUST      EQU 12
+DEF SALT_ATTR_INTIMATE  EQU 13
+DEF SALT_ATTR_FETISH    EQU 14
 
 ; wSaltScratch layout
 DEF SALT_DEX_HEIGHT EQU 0 ; 2 bytes, little endian (feet * 100 + inches)
@@ -26,6 +31,11 @@ DEF SALT_POTENTIAL  EQU 9
 DEF SALT_HUNGER     EQU 10
 DEF SALT_HUNGER_MAX EQU 11
 DEF SALT_PCT        EQU 12
+DEF SALT_WAIST      EQU 13
+DEF SALT_HIPS       EQU 14
+DEF SALT_BUST       EQU 15
+DEF SALT_INTIMATE   EQU 16 ; cup (women) or manhood in cm (men)
+DEF SALT_FETISH     EQU 17
 
 MACRO fixed_str
 ; a string padded with zeros to exactly \2 bytes (including the '@')
@@ -255,6 +265,9 @@ SaltComputeBody:
 	ret
 
 SaltLoadBodyPage::
+	ld a, [wCurSpecies]
+	cp HUMAN
+	jp z, SaltLoadHumanBodyPage
 	call SaltComputeBody
 	call SaltPlaceDivider
 
@@ -608,3 +621,282 @@ SaltHungerLabelGFX:
 ; the "P:" half of the HP label, redrawn as "G:"
 	db $00, $00, $ff, $ff, $ff, $1b, $ff, $7f
 	db $ff, $5f, $ff, $1b, $ff, $ff, $00, $00
+
+AddHumanToParty::
+; Salt Crystal: the player takes the first slot of the party.
+	ld a, HUMAN
+	ld [wCurPartySpecies], a
+	ld a, 5
+	ld [wCurPartyLevel], a
+	xor a
+	ld [wMonType], a
+	ld [wBattleMode], a
+	predef TryAddMonToParty
+; the Pokemon's gender follows the player's: force the attack and
+; speed DVs high for a boy, low for a girl
+	ld hl, wPartyMon1DVs
+	ld a, [wPlayerGender]
+	and a
+	jr nz, .girl
+	ld a, [hl]
+	or $f0
+	ld [hli], a
+	ld a, [hl]
+	or $f0
+	ld [hl], a
+	jr .gender_done
+.girl
+	ld a, [hl]
+	and $0f
+	ld [hli], a
+	ld a, [hl]
+	and $0f
+	ld [hl], a
+.gender_done
+	ld hl, wPlayerName
+	ld de, wPartyMonNicknames
+	ld bc, MON_NAME_LENGTH
+	call CopyBytes
+	ret
+
+SaltLoadHumanBodyPage:
+; Body page for the player: height, weight, waist, hips, bust or chest,
+; cup or manhood, and a silly fetish. Adults only.
+	call SaltComputeBody
+	call SaltPlaceDivider
+
+	ld a, [wPlayerGender]
+	and a
+	ld c, 0 ; 0 = male
+	jr z, .got_gender
+	inc c
+.got_gender
+	push bc
+
+; waist: men 70-100, women 60-90
+	ld a, SALT_ATTR_WAIST
+	ld b, 31
+	call SaltGetAttr
+	pop bc
+	push bc
+	add 70
+	ld d, a
+	ld a, c
+	and a
+	ld a, d
+	jr z, .waist_ok
+	sub 10
+.waist_ok
+	ld [wSaltScratch + SALT_WAIST], a
+
+; hips 85-110
+	ld a, SALT_ATTR_HIPS
+	ld b, 26
+	call SaltGetAttr
+	add 85
+	ld [wSaltScratch + SALT_HIPS], a
+
+; bust (women) / chest (men) 80-110 / 90-120
+	ld a, SALT_ATTR_BUST
+	ld b, 31
+	call SaltGetAttr
+	pop bc
+	push bc
+	add 80
+	ld d, a
+	ld a, c
+	and a
+	ld a, d
+	jr nz, .bust_ok
+	add 10
+.bust_ok
+	ld [wSaltScratch + SALT_BUST], a
+
+; cup AA-H (index 0-8) for women, manhood 8-22 cm for men
+	pop bc
+	push bc
+	ld a, c
+	and a
+	jr z, .male_intimate
+	ld a, SALT_ATTR_INTIMATE
+	ld b, 9
+	call SaltGetAttr
+	jr .got_intimate
+.male_intimate
+	ld a, SALT_ATTR_INTIMATE
+	ld b, 15
+	call SaltGetAttr
+	add 8
+.got_intimate
+	ld [wSaltScratch + SALT_INTIMATE], a
+
+	ld a, SALT_ATTR_FETISH
+	ld b, 16
+	call SaltGetAttr
+	ld [wSaltScratch + SALT_FETISH], a
+	pop bc
+	push bc
+
+; labels
+	ld de, .BodyStatsString
+	hlcoord 0, 9
+	call PlaceString
+	ld de, .HeightString
+	hlcoord 7, 9
+	call PlaceString
+	ld de, .WeightString
+	hlcoord 7, 10
+	call PlaceString
+	ld de, .WaistString
+	hlcoord 7, 11
+	call PlaceString
+	ld de, .HipsString
+	hlcoord 7, 12
+	call PlaceString
+	pop bc
+	push bc
+	ld de, .BustString
+	ld a, c
+	and a
+	jr nz, .bust_label
+	ld de, .ChestString
+.bust_label
+	hlcoord 7, 13
+	call PlaceString
+	pop bc
+	push bc
+	ld de, .CupString
+	ld a, c
+	and a
+	jr nz, .cup_label
+	ld de, .ManhoodString
+.cup_label
+	hlcoord 7, 14
+	call PlaceString
+	ld de, .FetishString
+	hlcoord 7, 15
+	call PlaceString
+
+; values
+	hlcoord 14, 9
+	ld de, wSaltScratch + SALT_CM
+	lb bc, PRINTNUM_LEFTALIGN | 2, 4
+	call PrintNum
+	ld de, .CmString
+	call PlaceString
+
+	hlcoord 14, 10
+	ld de, wSaltScratch + SALT_KG
+	lb bc, PRINTNUM_LEFTALIGN | 2, 3
+	call PrintNum
+	ld a, [wSaltScratch + SALT_KG]
+	and a
+	jr nz, .no_tenth
+	ld a, [wSaltScratch + SALT_KG + 1]
+	cp 100
+	jr nc, .no_tenth
+	ld [hl], '.'
+	inc hl
+	ld a, [wSaltScratch + SALT_KG_TENTH]
+	add '0'
+	ld [hli], a
+.no_tenth
+	ld de, .KgString
+	call PlaceString
+
+	hlcoord 14, 11
+	ld de, wSaltScratch + SALT_WAIST
+	lb bc, PRINTNUM_LEFTALIGN | 1, 3
+	call PrintNum
+	ld de, .CmString
+	call PlaceString
+
+	hlcoord 14, 12
+	ld de, wSaltScratch + SALT_HIPS
+	lb bc, PRINTNUM_LEFTALIGN | 1, 3
+	call PrintNum
+	ld de, .CmString
+	call PlaceString
+
+	hlcoord 14, 13
+	ld de, wSaltScratch + SALT_BUST
+	lb bc, PRINTNUM_LEFTALIGN | 1, 3
+	call PrintNum
+	ld de, .CmString
+	call PlaceString
+
+	pop bc
+	ld a, c
+	and a
+	jr nz, .print_cup
+	hlcoord 15, 14
+	ld de, wSaltScratch + SALT_INTIMATE
+	lb bc, PRINTNUM_LEFTALIGN | 1, 2
+	call PrintNum
+	ld de, .CmString
+	call PlaceString
+	jr .fetish
+.print_cup
+	ld a, [wSaltScratch + SALT_INTIMATE]
+	ld hl, .CupNames
+	ld bc, 3
+	call AddNTimes
+	ld d, h
+	ld e, l
+	hlcoord 14, 14
+	call PlaceString
+
+.fetish
+	ld a, [wSaltScratch + SALT_FETISH]
+	ld hl, .FetishNames
+	ld bc, 14
+	call AddNTimes
+	ld d, h
+	ld e, l
+	hlcoord 7, 16
+	call PlaceString
+	ret
+
+.BodyStatsString:
+	db   "BODY"
+	next "STATS@"
+.HeightString: db "HEIGHT@"
+.WeightString: db "WEIGHT@"
+.WaistString:  db "WAIST@"
+.HipsString:   db "HIPS@"
+.BustString:   db "BUST@"
+.ChestString:  db "CHEST@"
+.CupString:    db "CUP@"
+.ManhoodString: db "MANHOOD@"
+.FetishString: db "FETISH@"
+.CmString:     db "cm@"
+.KgString:     db "kg@"
+
+.CupNames:
+	fixed_str "AA", 3
+	fixed_str "A", 3
+	fixed_str "B", 3
+	fixed_str "C", 3
+	fixed_str "D", 3
+	fixed_str "E", 3
+	fixed_str "F", 3
+	fixed_str "G", 3
+	fixed_str "H", 3
+
+.FetishNames:
+	fixed_str "Rotten fruit", 14
+	fixed_str "Moustaches", 14
+	fixed_str "Wet socks", 14
+	fixed_str "Old books", 14
+	fixed_str "Cold soup", 14
+	fixed_str "Bad puns", 14
+	fixed_str "Big hats", 14
+	fixed_str "Muddy boots", 14
+	fixed_str "Soft cheese", 14
+	fixed_str "Squeaky toys", 14
+	fixed_str "Pointy ears", 14
+	fixed_str "Fresh paint", 14
+	fixed_str "Loud chewing", 14
+	fixed_str "Tiny hats", 14
+	fixed_str "Wet dogs", 14
+	fixed_str "Warm bread", 14

@@ -126,6 +126,8 @@ DayCareAskDepositPokemon:
 	ld a, [wCurPartySpecies]
 	cp EGG
 	jr z, .Egg
+	cp HUMAN ; Salt Crystal: the player can't be left at the day care
+	jr z, .Declined
 	farcall CheckCurPartyMonFainted
 	jr c, .OutOfUsableMons
 	ld hl, wPartyMon1Item

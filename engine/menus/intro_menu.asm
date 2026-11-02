@@ -66,6 +66,7 @@ NewGame:
 	call PlayerProfileSetup
 	call OakSpeech
 	call InitializeWorld
+	farcall AddHumanToParty
 
 	ld a, LANDMARK_NEW_BARK_TOWN
 	ld [wPrevLandmark], a

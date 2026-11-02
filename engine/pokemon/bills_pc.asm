@@ -1595,6 +1595,19 @@ BillsPC_CheckMail_PreventBlackout:
 	ld a, [wBillsPC_LoadedBox]
 	and a
 	jr nz, .Okay
+; Salt Crystal: the player's own party slot can't go into a box
+	ld a, [wBillsPC_CursorPosition]
+	ld hl, wBillsPC_ScrollPosition
+	add [hl]
+	ld c, a
+	ld b, 0
+	ld hl, wPartySpecies
+	add hl, bc
+	ld a, [hl]
+	cp HUMAN
+	ld de, PCString_ThatsYou
+	jr z, .NotOkay
+	ld a, [wBillsPC_LoadedBox]
 	ld a, [wBillsPC_NumMonsInBox]
 	cp $3
 	jr c, .ItsYourLastPokemon
@@ -2209,6 +2222,7 @@ PCString_WhatsUp: db "What's up?@"
 PCString_ReleasePKMN: db "Release <PK><MN>?@"
 PCString_MoveToWhere: db "Move to where?@"
 PCString_ItsYourLastPKMN: db "It's your last <PK><MN>!@"
+PCString_ThatsYou: db "That's YOU!@"
 PCString_TheresNoRoom: db "There's no room!@"
 PCString_NoMoreUsablePKMN: db "No more usable <PK><MN>!@"
 PCString_RemoveMail: db "Remove MAIL.@"

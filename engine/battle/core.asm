@@ -3632,22 +3632,53 @@ ResetEnemyStatLevels:
 
 CheckPlayerPartyForFitMon:
 ; Has the player any mon in his Party that can fight?
+; Salt Crystal: the player's own slot (HUMAN) doesn't count.
 	ld a, [wPartyCount]
 	ld e, a
-	xor a
+	ld d, 0
 	ld hl, wPartyMon1HP
-	ld bc, PARTYMON_STRUCT_LENGTH - 1
 .loop
+	push hl
+	ld bc, MON_HP - MON_SPECIES
+	ld a, l
+	sub c
+	ld l, a
+	ld a, h
+	sbc b
+	ld h, a
+	ld a, [hl] ; species
+	pop hl
+	cp HUMAN
+	jr z, .next
+	ld a, [hli]
 	or [hl]
-	inc hl ; + 1
-	or [hl]
+	dec hl
+	or d
+	ld d, a
+.next
+	ld bc, PARTYMON_STRUCT_LENGTH
 	add hl, bc
 	dec e
 	jr nz, .loop
-	ld d, a
 	ret
 
 CheckIfCurPartyMonIsFitToFight:
+; Salt Crystal: the player's own party slot (HUMAN) can't fight yet
+	ld hl, wPartySpecies
+	ld a, [wCurPartyMon]
+	ld c, a
+	ld b, 0
+	add hl, bc
+	ld a, [hl]
+	cp HUMAN
+	jr nz, .not_human
+	ld a, [wBattleHasJustStarted]
+	and a
+	jr nz, .finish_fail
+	ld hl, BattleText_HumanCantBattle
+	jr .print_textbox
+
+.not_human
 	ld a, [wCurPartyMon]
 	ld hl, wPartyMon1HP
 	call GetPartyLocation

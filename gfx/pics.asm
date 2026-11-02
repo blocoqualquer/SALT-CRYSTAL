@@ -780,6 +780,9 @@ INCBIN "gfx/pokemon/unown_r/back.2bpp.lz"
 
 SECTION "Pics 20", ROMX
 
+HumanFrontpic:       INCBIN "gfx/pokemon/human/front.animated.2bpp.lz"
+HumanBackpic:        INCBIN "gfx/pokemon/human/back.2bpp.lz"
+
 SECTION "Pics 21", ROMX
 
 SECTION "Pics 22", ROMX

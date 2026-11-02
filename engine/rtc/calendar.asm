@@ -281,6 +281,27 @@ SaltGetFoodRate:
 .Rates:
 	db 4, 6, 8, 12, 16, 24
 
+SaltCountPets:
+; Returns in a how many party members are neither eggs nor the player.
+	ld a, [wPartyCount]
+	and a
+	ret z
+	ld c, a
+	ld b, 0
+	ld hl, wPartySpecies
+.loop
+	ld a, [hli]
+	cp HUMAN
+	jr z, .next
+	cp EGG
+	jr z, .next
+	inc b
+.next
+	dec c
+	jr nz, .loop
+	ld a, b
+	ret
+
 SaltHungerTick::
 ; Every party Pokemon (eggs excepted) gets hungrier, bigger ones faster.
 ; The first one to cross a warning threshold queues a message.
@@ -406,10 +427,24 @@ endr
 	jr .next
 
 .die
-	ld a, [wPartyCount]
+; the player never starves to death (yet), and neither does the last pet
+	pop hl
+	push hl
+	ld bc, MON_HUNGER_LOST - MON_SPECIES
+	ld a, l
+	sub c
+	ld l, a
+	ld a, h
+	sbc b
+	ld h, a
+	ld a, [hl]
+	cp HUMAN
+	jr z, .hang_on
+	call SaltCountPets
 	cp 1
 	jr nz, .starved
-	ld de, 1 ; the last Pokemon hangs on
+.hang_on
+	ld de, 1
 	jr .store_hp
 
 .starved

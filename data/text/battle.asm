@@ -255,6 +255,11 @@ BattleText_AnEGGCantBattle:
 	line "battle!"
 	prompt
 
+BattleText_HumanCantBattle:
+	text "You can't fight"
+	line "yet!"
+	prompt
+
 BattleText_CantEscape2:
 	text "Can't escape!"
 	prompt

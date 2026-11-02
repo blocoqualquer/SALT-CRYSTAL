@@ -1700,7 +1700,7 @@ NEXTU
 ; stats screen
 wStatsScreenFlags:: db
 ; Salt Crystal: scratch for the body/mind/traits pages
-wSaltScratch:: ds 16
+wSaltScratch:: ds 24
 
 NEXTU
 ; battle tower
