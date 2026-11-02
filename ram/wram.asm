@@ -3046,6 +3046,7 @@ wWeather:: db
 wHungerFrames:: dw
 wHungerWarning:: db ; 0 none, else warning level 1-4
 wHungerWarnMon:: db ; party index
+wHungerRate:: db ; hunger points per tick, in eighths
 
 wObjectFollow_Leader:: db
 wObjectFollow_Follower:: db

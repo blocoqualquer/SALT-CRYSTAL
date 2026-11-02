@@ -209,9 +209,81 @@ StartMenu_PrintClock:
 	db "Nov@"
 	db "Dec@"
 
+MACRO hunger_crossing
+; set h = \2 if hunger lost went from below \1 (d) to \1 or more (e)
+	ld a, d
+	cp \1
+	jr nc, .skip\@
+	ld a, e
+	cp \1
+	jr c, .skip\@
+	ld h, \2
+.skip\@
+ENDM
+
+SaltGetFoodRate:
+; a = species. Returns in a how fast it gets hungry, in eighths of a
+; hunger point per tick, from the weight in its Pokedex entry.
+	push bc
+	push de
+	push hl
+	ld b, a
+	farcall GetDexEntryPointer ; b:de = entry
+	ld h, d
+	ld l, e
+	ld c, b
+.skip_category
+	ld a, c
+	call GetFarByte
+	inc hl
+	cp '@'
+	jr nz, .skip_category
+	inc hl
+	inc hl ; skip the height
+	ld a, c
+	call GetFarByte
+	ld e, a
+	inc hl
+	ld a, c
+	call GetFarByte
+	ld d, a ; de = weight in tenths of a pound
+	ld hl, .Thresholds
+	ld b, 0
+.find
+	ld a, [hli]
+	ld c, a
+	ld a, [hli]
+	cp d
+	jr c, .next_class
+	jr nz, .found
+	ld a, e
+	cp c
+	jr c, .found
+.next_class
+	inc b
+	ld a, b
+	cp 5
+	jr c, .find
+.found
+	ld hl, .Rates
+	ld c, b
+	ld b, 0
+	add hl, bc
+	ld a, [hl]
+	pop hl
+	pop de
+	pop bc
+	ret
+
+.Thresholds:
+; 5, 15, 40, 100 and 200 kg
+	dw 110, 331, 882, 2205, 4409
+.Rates:
+	db 4, 6, 8, 12, 16, 24
+
 SaltHungerTick::
-; Every party Pokemon (eggs excepted) loses 1 hunger point. The first
-; one to cross a warning threshold queues a message.
+; Every party Pokemon (eggs excepted) gets hungrier, bigger ones faster.
+; The first one to cross a warning threshold queues a message.
 	ld a, [wPartyCount]
 	and a
 	ret z
@@ -225,7 +297,9 @@ SaltHungerTick::
 	add hl, de
 	ld a, [hl]
 	cp EGG
-	jr z, .next
+	jp z, .next
+	call SaltGetFoodRate
+	ld [wHungerRate], a
 	ld hl, wPartyMon1 + MON_HUNGER_LOST
 	ld a, b
 	ld bc, PARTYMON_STRUCT_LENGTH
@@ -241,24 +315,40 @@ SaltHungerTick::
 	ld a, [hl]
 	cp HUNGER_MAX
 	jr nc, .starving
-	inc a
-	ld [hl], a
-	ld d, a
+; the Pokemon loses rate/8 points, the remainder as a random chance
+	ld d, a ; old hunger lost
+	ld a, [wHungerRate]
+	srl a
+	srl a
+	srl a
+	ld e, a
+	ld a, [wHungerRate]
+	and 7
+	jr z, .got_points
+	ld c, a
+	call Random
+	and 7
+	cp c
+	jr nc, .got_points
+	inc e
+.got_points
+	ld a, d
+	add e
+	cp HUNGER_MAX
+	jr c, .store_lost
 	ld a, HUNGER_MAX
-	sub d ; hunger left
-	ld e, 1
-	cp 50
-	jr z, .warn
-	inc e
-	cp 25
-	jr z, .warn
-	inc e
-	cp 10
-	jr z, .warn
-	inc e
+.store_lost
+	ld [hl], a
+	ld e, a ; new hunger lost
+	ld h, 0 ; warning level, if a threshold was crossed
+	hunger_crossing 50, 1
+	hunger_crossing 75, 2
+	hunger_crossing 90, 3
+	hunger_crossing 100, 4
+	ld a, h
 	and a
-	jr nz, .next
-.warn
+	jr z, .next
+	ld e, a
 	ld a, [wHungerWarning]
 	and a
 	jr nz, .next
@@ -272,7 +362,7 @@ SaltHungerTick::
 	pop bc
 	inc b
 	dec c
-	jr nz, .loop
+	jp nz, .loop
 	ret
 
 .starving
