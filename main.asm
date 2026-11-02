@@ -303,7 +303,6 @@ SECTION "bank23", ROMX
 INCLUDE "engine/tilesets/timeofday_pals.asm"
 INCLUDE "engine/battle/battle_transition.asm"
 INCLUDE "engine/events/field_moves.asm"
-INCLUDE "engine/events/magnet_train.asm"
 INCLUDE "engine/battle/battlestart_copytilemapatonce.asm"
 INCLUDE "engine/sprite_anims/core.asm"
 INCLUDE "engine/gfx/mon_icons.asm"
@@ -698,3 +697,4 @@ SECTION "Stadium 2 Checksums", ROMX[$7DE0], BANK[$7F]
 SECTION "Salt Pokemon", ROMX
 
 INCLUDE "engine/pokemon/mon_traits.asm"
+INCLUDE "engine/events/magnet_train.asm"

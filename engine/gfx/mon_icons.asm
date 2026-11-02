@@ -443,6 +443,13 @@ ReadMonMenuIcon:
 	ld d, 0
 	add hl, de
 	ld a, [hl]
+	cp ICON_PLAYER_BOY
+	ret nz
+	ld a, [wPlayerGender]
+	and a
+	ld a, ICON_PLAYER_BOY
+	ret z
+	ld a, ICON_PLAYER_GIRL
 	ret
 .egg
 	ld a, ICON_EGG
