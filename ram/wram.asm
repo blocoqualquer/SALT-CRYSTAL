@@ -870,6 +870,8 @@ SECTION "Unused Map Buffer", WRAM0
 
 ; This was a buffer for map-related pointers in the 1997 G/S prototype.
 ; See wMapBuffer in pokegold-spaceworld's wram.asm.
+; Salt Crystal: the start of this buffer holds the name of a Pokemon that
+; just starved (wHungerDeadName, see engine/rtc/calendar.asm)
 wUnusedMapBuffer:: ds 24
 wUnusedMapBufferEnd::
 

@@ -230,9 +230,17 @@ SaltHungerTick::
 	ld a, b
 	ld bc, PARTYMON_STRUCT_LENGTH
 	call AddNTimes
+; fainted Pokemon don't feel hunger
+	push hl
+	ld de, MON_HP - MON_HUNGER_LOST
+	add hl, de
+	ld a, [hli]
+	or [hl]
+	pop hl
+	jr z, .next
 	ld a, [hl]
 	cp HUNGER_MAX
-	jr nc, .next
+	jr nc, .starving
 	inc a
 	ld [hl], a
 	ld d, a
@@ -267,6 +275,79 @@ SaltHungerTick::
 	jr nz, .loop
 	ret
 
+.starving
+; Hunger is gone: lose 1/16 of max HP (at least 1) every tick. At 0 HP
+; the Pokemon dies for good, unless it is the last one in the party.
+	push hl ; hunger byte
+	ld de, MON_HP - MON_HUNGER_LOST
+	add hl, de
+	ld d, [hl]
+	inc hl
+	ld e, [hl] ; de = HP
+	inc hl
+	ld b, [hl]
+	inc hl
+	ld c, [hl] ; bc = max HP
+rept 4
+	srl b
+	rr c
+endr
+	ld a, b
+	or c
+	jr nz, .got_damage
+	inc c
+.got_damage
+	ld a, e
+	sub c
+	ld e, a
+	ld a, d
+	sbc b
+	ld d, a
+	jr c, .die
+	or e
+	jr z, .die
+.store_hp
+	pop hl
+	ld bc, MON_HP - MON_HUNGER_LOST
+	add hl, bc
+	ld [hl], d
+	inc hl
+	ld [hl], e
+	jr .next
+
+.die
+	ld a, [wPartyCount]
+	cp 1
+	jr nz, .starved
+	ld de, 1 ; the last Pokemon hangs on
+	jr .store_hp
+
+.starved
+	pop hl
+	pop bc ; b = party index
+	push bc
+	ld a, b
+	ld hl, wPartyMonNicknames
+	call GetNickname
+	ld hl, wStringBuffer1
+	ld de, wUnusedMapBuffer
+	ld bc, MON_NAME_LENGTH
+	call CopyBytes
+	pop bc
+	push bc
+	ld a, b
+	ld [wCurPartyMon], a
+	xor a ; REMOVE_PARTY
+	ld [wPokemonWithdrawDepositParameter], a
+	farcall RemoveMonFromPartyOrBox
+	ld a, HUNGER_WARNING_DEATH
+	ld [wHungerWarning], a
+; the next Pokemon slid into this slot, so don't advance the index
+	pop bc
+	dec c
+	jp nz, .loop
+	ret
+
 CheckHungerWarning::
 ; Called with the other overworld time events: starts the warning
 ; script if a Pokemon got hungry. Returns carry if it did.
@@ -283,13 +364,20 @@ CheckHungerWarning::
 	ld h, [hl]
 	ld l, a
 	push hl
+	ld a, [wHungerWarning]
+	push af
 	xor a
 	ld [wHungerWarning], a
+	pop af
+	cp HUNGER_WARNING_DEATH
+	ld hl, wUnusedMapBuffer
+	jr z, .got_name
 	ld a, [wHungerWarnMon]
 	ld hl, wPartyMonNicknames
 	call GetNickname
-; the text engine reuses wStringBuffer1, so keep the name in buffer 3
 	ld hl, wStringBuffer1
+.got_name
+; the text engine reuses wStringBuffer1, so keep the name in buffer 3
 	ld de, wStringBuffer3
 	ld bc, MON_NAME_LENGTH
 	call CopyBytes
@@ -302,6 +390,7 @@ CheckHungerWarning::
 	dw HungerRumbleScript
 	dw HungerWeakScript
 	dw HungerStarvingScript
+	dw HungerDeathScript
 
 HungerGrowlScript:
 	opentext
@@ -347,6 +436,19 @@ HungerWeakText:
 	text_ram wStringBuffer3
 	text " looks weak"
 	line "from hunger!"
+	done
+
+HungerDeathScript:
+	opentext
+	writetext HungerDeathText
+	waitbutton
+	closetext
+	end
+
+HungerDeathText:
+	text_ram wStringBuffer3
+	text " starved"
+	line "to death..."
 	done
 
 HungerStarvingText:
