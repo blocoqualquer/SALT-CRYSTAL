@@ -419,6 +419,45 @@ endr
 	jr z, .die
 .store_hp
 	pop hl
+	push hl
+	ld bc, MON_HP - MON_HUNGER_LOST
+	add hl, bc
+	ld a, [hli]
+	ld b, a
+	ld c, [hl] ; bc = old HP
+	pop hl ; hunger byte
+	ld a, d
+	and a
+	jr nz, .write_hp
+	ld a, e
+	dec a
+	jr nz, .write_hp ; new HP isn't 1
+	ld a, b
+	and a
+	jr nz, .at_the_door
+	dec c
+	jr z, .write_hp ; it already was 1
+.at_the_door
+; the player just fell to 1 HP: warn once
+	pop bc
+	push bc ; b = party index
+	push hl
+	ld hl, wPartySpecies
+	ld c, b
+	ld b, 0
+	add hl, bc
+	ld a, [hl]
+	pop hl
+	cp HUMAN
+	jr nz, .write_hp
+	ld a, [wHungerWarning]
+	and a
+	jr nz, .write_hp
+	ld a, HUNGER_WARNING_DOOR
+	ld [wHungerWarning], a
+	ld a, c
+	ld [wHungerWarnMon], a
+.write_hp
 	ld bc, MON_HP - MON_HUNGER_LOST
 	add hl, bc
 	ld [hl], d
@@ -516,6 +555,7 @@ CheckHungerWarning::
 	dw HungerWeakScript
 	dw HungerStarvingScript
 	dw HungerDeathScript
+	dw HungerDoorScript
 
 HungerGrowlScript:
 	opentext
@@ -561,6 +601,19 @@ HungerWeakText:
 	text_ram wStringBuffer3
 	text " looks weak"
 	line "from hunger!"
+	done
+
+HungerDoorScript:
+	opentext
+	writetext HungerDoorText
+	waitbutton
+	closetext
+	end
+
+HungerDoorText:
+	text_ram wStringBuffer3
+	text " is at"
+	line "death's door!"
 	done
 
 HungerDeathScript:
