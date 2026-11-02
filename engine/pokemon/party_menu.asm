@@ -795,6 +795,7 @@ PrintPartyMenuActionText:
 	dw .RevitalizedText
 	dw .GrewToLevelText
 	dw .CameToItsSensesText
+	dw .AteFoodText
 
 .RecoveredSomeHPText:
 	text_far _RecoveredSomeHPText
@@ -834,6 +835,12 @@ PrintPartyMenuActionText:
 
 .CameToItsSensesText:
 	text_far _CameToItsSensesText
+	text_end
+
+.AteFoodText:
+	text_ram wStringBuffer1
+	text " feels"
+	line "less hungry."
 	text_end
 
 .PrintText:

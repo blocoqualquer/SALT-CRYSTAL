@@ -186,8 +186,8 @@ ItemEffects:
 	dw NoEffect            ; POLKADOT_BOW
 	dw NoEffect            ; ITEM_AB
 	dw NoEffect            ; UP_GRADE
-	dw RestoreHPEffect     ; BERRY
-	dw RestoreHPEffect     ; GOLD_BERRY
+	dw FeedBerryEffect     ; BERRY
+	dw FeedBerryEffect     ; GOLD_BERRY
 	dw SquirtbottleEffect  ; SQUIRTBOTTLE
 	dw NoEffect            ; ITEM_B0
 	dw PokeBallEffect      ; PARK_BALL
@@ -1623,6 +1623,43 @@ BitterBerryEffect:
 
 	ld a, 0
 
+.done
+	jp StatusHealer_Jumptable
+
+FeedBerryEffect:
+; Salt Crystal: berries are food. They lower the hunger lost by the
+; chosen party Pokemon instead of healing HP (holding them still heals).
+	ld b, PARTYMENUACTION_HEALING_ITEM
+	call UseItem_SelectMon
+	jp c, StatusHealer_ExitMenu
+
+	call IsMonFainted
+	ld a, 1
+	jr z, .done
+	ld a, MON_HUNGER_LOST
+	call GetPartyParamLocation
+	ld a, [hl]
+	and a
+	ld a, 1
+	jr z, .done ; already full
+
+	ld c, BERRY_FEED
+	ld a, [wCurItem]
+	cp GOLD_BERRY
+	jr nz, .got_amount
+	ld c, GOLD_BERRY_FEED
+.got_amount
+	ld a, [hl]
+	sub c
+	jr nc, .store
+	xor a
+.store
+	ld [hl], a
+	ld a, PARTYMENUTEXT_FED
+	ld [wPartyMenuActionText], a
+	call ItemActionTextWaitButton
+	call UseDisposableItem
+	xor a
 .done
 	jp StatusHealer_Jumptable
 

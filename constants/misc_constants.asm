@@ -60,6 +60,8 @@ DEF WEATHER_ROLL_HOURS EQU 3
 ; Salt Crystal: party Pokemon lose 1 hunger point about every 23 seconds
 DEF HUNGER_FRAMES EQU 1400
 DEF HUNGER_MAX    EQU 100
+DEF BERRY_FEED      EQU 20
+DEF GOLD_BERRY_FEED EQU 40
 
 ; time of day boundaries
 DEF MORN_HOUR EQU 4  ; 4 AM
