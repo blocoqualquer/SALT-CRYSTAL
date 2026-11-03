@@ -14,7 +14,7 @@ DEF PROC_TALL     EQU $03
 DEF PROC_FLOWERS  EQU $04
 DEF PROC_TREE     EQU $05
 DEF PROC_PATH     EQU $01
-DEF PROC_WATER    EQU $57
+DEF PROC_ROCK     EQU $0a
 
 ; scratch layout (wSaltScratch)
 DEF PS_SEED  EQU 0 ; dw
@@ -39,7 +39,8 @@ DEF PS_SE    EQU 20
 DEF PS_J     EQU 21 ; where the roads jog
 DEF PS_K     EQU 22
 
-DEF NUM_PROC_BIOMES EQU 5
+DEF NUM_PROC_BIOMES EQU 6
+DEF PROC_BIOME_SIZE EQU 15
 
 ProcGenMap::
 ; Called from LoadBlockData (after the connection strips are in place).
@@ -87,6 +88,52 @@ ProcGenMap::
 	ld a, b
 	ld [wSaltScratch + PS_SE], a
 
+; Edges inside a 2x2 region of chunks are open (no wall); the others are walls.
+	ld a, [wProcChunkY]
+	and 1
+	ld [wSaltScratch + PS_SN], a ; north is open when y is odd
+	xor 1
+	ld [wSaltScratch + PS_SS], a
+	ld a, [wProcChunkX]
+	and 1
+	ld [wSaltScratch + PS_SW], a
+	xor 1
+	ld [wSaltScratch + PS_SE], a
+
+; the biome belongs to the 2x2 region (the home region is a meadow)
+	ld a, [wProcChunkX]
+	srl a
+	ld b, a
+	ld a, [wProcChunkY]
+	srl a
+	ld c, a
+	ld a, [wPlayerID]
+	xor b
+	xor $77
+	or $01
+	ld [wSaltScratch + PS_SEED], a
+	ld a, [wPlayerID + 1]
+	xor c
+	xor $19
+	ld [wSaltScratch + PS_SEED + 1], a
+	ld d, 8
+.stir_region
+	call ProcRand
+	dec d
+	jr nz, .stir_region
+	push bc
+	ld b, NUM_PROC_BIOMES
+	call ProcRandMod
+	pop bc
+	ld d, a
+	ld a, b
+	or c
+	ld a, d
+	jr nz, .got_biome
+	xor a
+.got_biome
+	ld [wSaltScratch + PS_BIOME], a
+
 ; seed for the inside of the chunk
 	ld a, [wPlayerID]
 	ld hl, wProcChunkX
@@ -104,18 +151,6 @@ ProcGenMap::
 	call ProcRand
 	dec b
 	jr nz, .stir
-; the biome of this chunk (the first one is always a gentle meadow)
-	ld b, NUM_PROC_BIOMES
-	call ProcRandMod
-	ld b, a
-	ld a, [wProcChunkX]
-	ld hl, wProcChunkY
-	or [hl]
-	ld a, b
-	jr nz, .got_biome
-	xor a
-.got_biome
-	ld [wSaltScratch + PS_BIOME], a
 ; where the roads jog
 	ld b, 14
 	call ProcRandMod
@@ -137,40 +172,74 @@ ProcGenMap::
 	ld d, PROC_W
 	ld e, PROC_H
 	call ProcRect
-; patches of tall grass, flowers, ponds and woods, as the biome wants
+; patches of tall grass, flowers, woods, rocks and lakes, as the biome wants
 	ld a, [wSaltScratch + PS_BIOME]
 	ld hl, ProcBiomes
-	ld bc, 12
+	ld bc, PROC_BIOME_SIZE
 	call AddNTimes
 	ld a, PROC_TALL
 	call ProcBiomeScatter
 	ld a, PROC_FLOWERS
 	call ProcBiomeScatter
-	ld a, PROC_WATER
-	call ProcBiomeScatter
 	ld a, PROC_TREE
 	call ProcBiomeScatter
+	ld a, PROC_ROCK
+	call ProcBiomeScatter
+	ld b, [hl]
+	inc hl
+	ld d, [hl]
+	inc hl
+	ld e, [hl]
+	call ProcLakes
 
-; corners are always trees
-	ld a, PROC_TREE
+; corners: grass at the middle of a region, trees elsewhere
+	ld a, [wProcChunkX]
+	and 1
+	ld b, a
+	ld a, [wProcChunkY]
+	and 1
+	and b ; top left: x odd, y odd
+	call ProcWallBlock
 	ld b, -3
 	ld c, -3
 	ld d, 6
 	ld e, 6
 	call ProcRect
-	ld a, PROC_TREE
+	ld a, [wProcChunkX]
+	and 1
+	xor 1
+	ld b, a
+	ld a, [wProcChunkY]
+	and 1
+	and b ; top right: x even, y odd
+	call ProcWallBlock
 	ld b, PROC_W - 3
 	ld c, -3
 	ld d, 6
 	ld e, 6
 	call ProcRect
-	ld a, PROC_TREE
+	ld a, [wProcChunkX]
+	and 1
+	ld b, a
+	ld a, [wProcChunkY]
+	and 1
+	xor 1
+	and b ; bottom left: x odd, y even
+	call ProcWallBlock
 	ld b, -3
 	ld c, PROC_H - 3
 	ld d, 6
 	ld e, 6
 	call ProcRect
-	ld a, PROC_TREE
+	ld a, [wProcChunkX]
+	and 1
+	xor 1
+	ld b, a
+	ld a, [wProcChunkY]
+	and 1
+	xor 1
+	and b ; bottom right: x even, y even
+	call ProcWallBlock
 	ld b, PROC_W - 3
 	ld c, PROC_H - 3
 	ld d, 6
@@ -588,14 +657,134 @@ ProcBiomeScatter:
 	ret
 
 ProcBiomes:
-; per biome: tall grass, flowers, water, trees (count, max w, max h)
+; per biome: tall grass, flowers, trees, rocks, lakes (count, max w, max h)
 	; 0 meadow
-	db 14, 5, 3,  24, 2, 2,   1, 3, 2,   8, 2, 2
+	db 14, 5, 3,  24, 2, 2,   8, 2, 2,   0, 1, 1,   1, 6, 5
 	; 1 forest
-	db  6, 3, 3,   4, 1, 1,   1, 2, 2,  70, 4, 4
+	db  6, 3, 3,   4, 1, 1,  70, 4, 4,   0, 1, 1,   0, 3, 3
 	; 2 lakes
-	db 10, 4, 3,   6, 2, 2,   9, 6, 4,  14, 3, 3
+	db 10, 4, 3,   6, 2, 2,  14, 3, 3,   0, 1, 1,   5, 9, 7
 	; 3 tall grass
-	db 60, 7, 5,   8, 2, 2,   1, 3, 2,   8, 3, 3
+	db 60, 7, 5,   8, 2, 2,   8, 3, 3,   0, 1, 1,   1, 5, 4
 	; 4 flower field
-	db  6, 3, 2,  60, 3, 3,   2, 3, 2,   6, 2, 2
+	db  6, 3, 2,  60, 3, 3,   6, 2, 2,   0, 1, 1,   2, 5, 4
+	; 5 mountains
+	db  8, 3, 2,   2, 1, 1,  12, 3, 3,  40, 4, 3,   0, 3, 3
+
+ProcLakes:
+; b = how many, d x e = largest size (at least 3x3), all inside the walls
+	ld a, b
+	and a
+	ret z
+	ld a, d
+	ld [wSaltScratch + PS_MAXW], a
+	ld a, e
+	ld [wSaltScratch + PS_MAXH], a
+.next
+	push bc
+	ld a, [wSaltScratch + PS_MAXW]
+	sub 2
+	ld b, a
+	call ProcRandMod
+	add 3
+	ld [wSaltScratch + PS_W], a
+	ld a, [wSaltScratch + PS_MAXH]
+	sub 2
+	ld b, a
+	call ProcRandMod
+	add 3
+	ld [wSaltScratch + PS_H], a
+	ld a, [wSaltScratch + PS_W]
+	ld b, a
+	ld a, PROC_W - 7
+	sub b
+	ld b, a
+	call ProcRandMod
+	add 4
+	ld [wSaltScratch + PS_X], a
+	ld a, [wSaltScratch + PS_H]
+	ld b, a
+	ld a, PROC_H - 7
+	sub b
+	ld b, a
+	call ProcRandMod
+	add 4
+	ld [wSaltScratch + PS_Y], a
+	call ProcLake
+	pop bc
+	dec b
+	jr nz, .next
+	ret
+
+ProcLake:
+; a lake with shore blocks, at PS_X, PS_Y, PS_W x PS_H
+	xor a
+	ld [wSaltScratch + PS_CY], a
+.row
+	ld a, [wSaltScratch + PS_CY]
+	and a
+	ld hl, .top
+	jr z, .got_row
+	inc a
+	ld b, a
+	ld a, [wSaltScratch + PS_H]
+	cp b
+	ld hl, .bottom
+	jr z, .got_row
+	ld hl, .mid
+.got_row
+	xor a
+	ld [wSaltScratch + PS_CX], a
+.col
+	ld a, [wSaltScratch + PS_CX]
+	and a
+	ld c, 0
+	jr z, .got_col
+	inc a
+	ld b, a
+	ld a, [wSaltScratch + PS_W]
+	cp b
+	ld c, 2
+	jr z, .got_col
+	ld c, 1
+.got_col
+	push hl
+	ld b, 0
+	add hl, bc
+	ld a, [hl]
+	push af
+	ld a, [wSaltScratch + PS_X]
+	ld b, a
+	ld a, [wSaltScratch + PS_CX]
+	add b
+	ld d, a
+	ld a, [wSaltScratch + PS_Y]
+	ld b, a
+	ld a, [wSaltScratch + PS_CY]
+	add b
+	ld e, a
+	pop af
+	call ProcPutBlock
+	pop hl
+	ld a, [wSaltScratch + PS_CX]
+	inc a
+	ld [wSaltScratch + PS_CX], a
+	ld b, a
+	ld a, [wSaltScratch + PS_W]
+	cp b
+	jr nz, .col
+	ld a, [wSaltScratch + PS_CY]
+	inc a
+	ld [wSaltScratch + PS_CY], a
+	ld b, a
+	ld a, [wSaltScratch + PS_H]
+	cp b
+	jr nz, .row
+	ret
+
+.top
+	db $30, $31, $32
+.mid
+	db $34, $35, $36
+.bottom
+	db $38, $39, $3a
