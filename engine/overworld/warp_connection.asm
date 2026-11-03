@@ -16,6 +16,24 @@ HandleContinueMap:
 
 EnterMapConnection:
 ; Return carry if a connection has been entered.
+	ld a, [wMapNumber]
+	cp MAP_PROC_TEST
+	jr nz, .no_chunk
+	ld a, [wPlayerStepDirection]
+	ld hl, wProcChunkY
+	and a ; DOWN
+	jr z, .chunk_inc
+	cp UP
+	jr z, .chunk_dec
+	ld hl, wProcChunkX
+	cp LEFT
+	jr z, .chunk_dec
+.chunk_inc
+	inc [hl]
+	jr .no_chunk
+.chunk_dec
+	dec [hl]
+.no_chunk
 	ld a, [wPlayerStepDirection]
 	and a ; DOWN
 	jp z, .south

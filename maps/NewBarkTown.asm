@@ -133,7 +133,9 @@ NewBarkTownSign:
 	yesorno
 	iffalse .no
 	closetext
-	warp PROC_TEST, 28, 50
+	loadmem wProcChunkX, 0
+	loadmem wProcChunkY, 0
+	warp PROC_TEST, 28, 49
 	end
 
 .no

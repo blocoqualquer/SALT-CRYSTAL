@@ -3042,6 +3042,10 @@ wCurDay:: db
 ; Salt Crystal: current overworld weather (OW_WEATHER_*)
 wWeather:: db
 
+; Salt Crystal: coordinates of the procedural chunk the player is in
+wProcChunkX:: db
+wProcChunkY:: db
+
 ; Salt Crystal: frames until the next hunger tick, and a pending warning
 wHungerFrames:: dw
 wHungerWarning:: db ; 0 none, else warning level 1-4

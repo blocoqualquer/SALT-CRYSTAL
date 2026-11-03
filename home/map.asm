@@ -697,6 +697,7 @@ LoadBlockData::
 	ld a, 0
 	call ByteFill
 	call ChangeMap
+	call FillMapConnections
 	ld a, [wMapGroup]
 	cp GROUP_PROC_TEST
 	jr nz, .not_proc
@@ -705,7 +706,6 @@ LoadBlockData::
 	jr nz, .not_proc
 	farcall ProcGenMap
 .not_proc
-	call FillMapConnections
 	ld a, MAPCALLBACK_TILES
 	call RunMapCallback
 	ret

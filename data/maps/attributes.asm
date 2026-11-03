@@ -517,6 +517,10 @@ ENDM
 	map_attributes BlackthornPokecenter1F, BLACKTHORN_POKECENTER_1F, $00
 	map_attributes MoveDeletersHouse, MOVE_DELETERS_HOUSE, $00
 	map_attributes ProcTest, PROC_TEST, $05
+	connection north, ProcTest, PROC_TEST, 0
+	connection south, ProcTest, PROC_TEST, 0
+	connection west, ProcTest, PROC_TEST, 0
+	connection east, ProcTest, PROC_TEST, 0
 
 	map_attributes CinnabarPokecenter1F, CINNABAR_POKECENTER_1F, $00
 	map_attributes CinnabarPokecenter2FBeta, CINNABAR_POKECENTER_2F_BETA, $00

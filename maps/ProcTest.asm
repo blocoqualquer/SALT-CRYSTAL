@@ -7,7 +7,13 @@ ProcTest_MapScripts:
 	def_callbacks
 
 ProcTestLeaveScript:
+; only the first chunk has the way home
+	readmem wProcChunkX
+	iftrue .stay
+	readmem wProcChunkY
+	iftrue .stay
 	warp NEW_BARK_TOWN, 8, 9
+.stay
 	end
 
 ProcTest_MapEvents:
@@ -16,8 +22,8 @@ ProcTest_MapEvents:
 	def_warp_events
 
 	def_coord_events
-	coord_event 28, 53, -1, ProcTestLeaveScript
-	coord_event 29, 53, -1, ProcTestLeaveScript
+	coord_event 28, 50, -1, ProcTestLeaveScript
+	coord_event 29, 50, -1, ProcTestLeaveScript
 
 	def_bg_events
 
