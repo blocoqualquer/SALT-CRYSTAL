@@ -697,4 +697,5 @@ SECTION "Stadium 2 Checksums", ROMX[$7DE0], BANK[$7F]
 SECTION "Salt Pokemon", ROMX
 
 INCLUDE "engine/pokemon/mon_traits.asm"
+INCLUDE "engine/overworld/proc_map.asm"
 INCLUDE "engine/events/magnet_train.asm"

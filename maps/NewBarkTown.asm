@@ -126,7 +126,24 @@ NewBarkTownRivalScript:
 	end
 
 NewBarkTownSign:
-	jumptext NewBarkTownSignText
+	opentext
+	writetext NewBarkTownSignText
+	waitbutton
+	writetext NewBarkTownProcAskText
+	yesorno
+	iffalse .no
+	closetext
+	warp PROC_TEST, 28, 50
+	end
+
+.no
+	closetext
+	end
+
+NewBarkTownProcAskText:
+	text "Visit the TEST"
+	line "ROUTE?"
+	done
 
 NewBarkTownPlayersHouseSign:
 	jumptext NewBarkTownPlayersHouseSignText
