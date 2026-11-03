@@ -28,6 +28,9 @@ DEF PS_CY    EQU 8
 DEF PS_MAXW  EQU 9
 DEF PS_MAXH  EQU 10
 DEF PS_PX    EQU 11
+DEF PS_BIOME EQU 12
+
+DEF NUM_PROC_BIOMES EQU 5
 
 ProcGenMap::
 ; Called from LoadBlockData (after the connection strips are in place).
@@ -49,6 +52,18 @@ ProcGenMap::
 	call ProcRand
 	dec b
 	jr nz, .stir
+; the biome of this chunk (the first one is always a gentle meadow)
+	ld b, NUM_PROC_BIOMES
+	call ProcRandMod
+	ld b, a
+	ld a, [wProcChunkX]
+	ld hl, wProcChunkY
+	or [hl]
+	ld a, b
+	jr nz, .got_biome
+	xor a
+.got_biome
+	ld [wSaltScratch + PS_BIOME], a
 
 ; the whole buffer (padding included) starts as forest
 	ld hl, wOverworldMapBlocks
@@ -62,23 +77,19 @@ ProcGenMap::
 	ld d, PROC_W
 	ld e, PROC_H
 	call ProcRect
-; patches of tall grass, flowers, ponds and woods
+; patches of tall grass, flowers, ponds and woods, as the biome wants
+	ld a, [wSaltScratch + PS_BIOME]
+	ld hl, ProcBiomes
+	ld bc, 12
+	call AddNTimes
 	ld a, PROC_TALL
-	ld b, 28
-	ld de, 6 << 8 | 4
-	call ProcScatter
+	call ProcBiomeScatter
 	ld a, PROC_FLOWERS
-	ld b, 12
-	ld de, 2 << 8 | 2
-	call ProcScatter
+	call ProcBiomeScatter
 	ld a, PROC_WATER
-	ld b, 3
-	ld de, 4 << 8 | 3
-	call ProcScatter
+	call ProcBiomeScatter
 	ld a, PROC_TREE
-	ld b, 22
-	ld de, 4 << 8 | 4
-	call ProcScatter
+	call ProcBiomeScatter
 ; walls of trees around the chunk, and over the strips the neighbours see
 	ld a, PROC_TREE
 	ld b, -3
@@ -449,3 +460,29 @@ SaltEdgeCheck::
 	ld a, 1
 	ld [wScriptVar], a
 	ret
+
+ProcBiomeScatter:
+; hl -> count, max width, max height of one kind of patch (block in a)
+	ld b, [hl]
+	inc hl
+	ld d, [hl]
+	inc hl
+	ld e, [hl]
+	inc hl
+	push hl
+	call ProcScatter
+	pop hl
+	ret
+
+ProcBiomes:
+; per biome: tall grass, flowers, water, trees (count, max w, max h)
+	; 0 meadow
+	db 14, 5, 3,  24, 2, 2,   1, 3, 2,   8, 2, 2
+	; 1 forest
+	db  6, 3, 3,   4, 1, 1,   1, 2, 2,  70, 4, 4
+	; 2 lakes
+	db 10, 4, 3,   6, 2, 2,   9, 6, 4,  14, 3, 3
+	; 3 tall grass
+	db 60, 7, 5,   8, 2, 2,   1, 3, 2,   8, 3, 3
+	; 4 flower field
+	db  6, 3, 2,  60, 3, 3,   2, 3, 2,   6, 2, 2
