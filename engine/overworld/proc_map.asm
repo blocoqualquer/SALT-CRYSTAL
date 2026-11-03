@@ -27,27 +27,79 @@ DEF PS_CX    EQU 7
 DEF PS_CY    EQU 8
 DEF PS_MAXW  EQU 9
 DEF PS_MAXH  EQU 10
-DEF PS_PX    EQU 11
 DEF PS_BIOME EQU 12
+DEF PS_GN    EQU 13 ; gap positions in the walls: north, south (x), west, east (y)
+DEF PS_GS    EQU 14
+DEF PS_GW    EQU 15
+DEF PS_GE    EQU 16
+DEF PS_SN    EQU 17 ; wall styles: 0 trees, 1 open grass
+DEF PS_SS    EQU 18
+DEF PS_SW    EQU 19
+DEF PS_SE    EQU 20
+DEF PS_J     EQU 21 ; where the roads jog
+DEF PS_K     EQU 22
 
 DEF NUM_PROC_BIOMES EQU 5
 
 ProcGenMap::
 ; Called from LoadBlockData (after the connection strips are in place).
-; Seed = trainer ID mixed with this chunk's coordinates, so every chunk of
-; the world is always the same without storing anything.
+;
+; The 3 outermost blocks on every side of a chunk are the "wall": trees (or
+; open grass) with a 2-wide road gap. Its shape depends only on the edge
+; shared with the neighbour, so the strip we draw for the neighbour is what
+; the neighbour really has, and ordinary map connections work.
+	ld a, [wProcChunkY]
+	dec a
+	ld c, a
+	ld a, [wProcChunkX]
+	ld b, a
+	ld d, 0
+	call ProcEdge
+	ld [wSaltScratch + PS_GN], a
+	ld a, b
+	ld [wSaltScratch + PS_SN], a
+	ld a, [wProcChunkY]
+	ld c, a
+	ld a, [wProcChunkX]
+	ld b, a
+	ld d, 0
+	call ProcEdge
+	ld [wSaltScratch + PS_GS], a
+	ld a, b
+	ld [wSaltScratch + PS_SS], a
+	ld a, [wProcChunkY]
+	ld c, a
+	ld a, [wProcChunkX]
+	dec a
+	ld b, a
+	ld d, 1
+	call ProcEdge
+	ld [wSaltScratch + PS_GW], a
+	ld a, b
+	ld [wSaltScratch + PS_SW], a
+	ld a, [wProcChunkY]
+	ld c, a
+	ld a, [wProcChunkX]
+	ld b, a
+	ld d, 1
+	call ProcEdge
+	ld [wSaltScratch + PS_GE], a
+	ld a, b
+	ld [wSaltScratch + PS_SE], a
+
+; seed for the inside of the chunk
 	ld a, [wPlayerID]
 	ld hl, wProcChunkX
 	xor [hl]
-	xor $a5
+	xor $5c
 	ld [wSaltScratch + PS_SEED], a
 	ld a, [wPlayerID + 1]
 	ld hl, wProcChunkY
 	xor [hl]
-	xor $3c
+	xor $c3
 	or $01 ; never zero
 	ld [wSaltScratch + PS_SEED + 1], a
-	ld b, 12 ; neighbouring chunks differ by a bit: stir them up
+	ld b, 12
 .stir
 	call ProcRand
 	dec b
@@ -64,13 +116,21 @@ ProcGenMap::
 	xor a
 .got_biome
 	ld [wSaltScratch + PS_BIOME], a
+; where the roads jog
+	ld b, 14
+	call ProcRandMod
+	add 6
+	ld [wSaltScratch + PS_J], a
+	ld b, 12
+	call ProcRandMod
+	add 8
+	ld [wSaltScratch + PS_K], a
 
-; the whole buffer (padding included) starts as forest
+; everything starts as forest, the chunk itself as grass
 	ld hl, wOverworldMapBlocks
 	ld bc, PROC_STRIDE * (PROC_H + 6)
 	ld a, PROC_TREE
 	call ByteFill
-; clearing
 	ld a, PROC_GRASS
 	ld b, 0
 	ld c, 0
@@ -90,152 +150,258 @@ ProcGenMap::
 	call ProcBiomeScatter
 	ld a, PROC_TREE
 	call ProcBiomeScatter
-; walls of trees around the chunk, and over the strips the neighbours see
+
+; corners are always trees
 	ld a, PROC_TREE
 	ld b, -3
 	ld c, -3
-	ld d, PROC_W + 6
-	ld e, 4
-	call ProcRect
-	ld a, PROC_TREE
-	ld b, -3
-	ld c, PROC_H - 1
-	ld d, PROC_W + 6
-	ld e, 4
-	call ProcRect
-	ld a, PROC_TREE
-	ld b, -3
-	ld c, 0
-	ld d, 4
-	ld e, PROC_H
-	call ProcRect
-	ld a, PROC_TREE
-	ld b, PROC_W - 1
-	ld c, 0
-	ld d, 4
-	ld e, PROC_H
-	call ProcRect
-; entrance clearing
-	ld a, PROC_GRASS
-	ld b, 12
-	ld c, PROC_H - 5
 	ld d, 6
-	ld e, 4
+	ld e, 6
 	call ProcRect
-; east-west road, through the walls into the neighbours' strips
+	ld a, PROC_TREE
+	ld b, PROC_W - 3
+	ld c, -3
+	ld d, 6
+	ld e, 6
+	call ProcRect
+	ld a, PROC_TREE
+	ld b, -3
+	ld c, PROC_H - 3
+	ld d, 6
+	ld e, 6
+	call ProcRect
+	ld a, PROC_TREE
+	ld b, PROC_W - 3
+	ld c, PROC_H - 3
+	ld d, 6
+	ld e, 6
+	call ProcRect
+; the four walls (trees or open grass)
+	ld a, [wSaltScratch + PS_SN]
+	call ProcWallBlock
+	ld b, 3
+	ld c, -3
+	ld d, PROC_W - 6
+	ld e, 6
+	call ProcRect
+	ld a, [wSaltScratch + PS_SS]
+	call ProcWallBlock
+	ld b, 3
+	ld c, PROC_H - 3
+	ld d, PROC_W - 6
+	ld e, 6
+	call ProcRect
+	ld a, [wSaltScratch + PS_SW]
+	call ProcWallBlock
+	ld b, -3
+	ld c, 3
+	ld d, 6
+	ld e, PROC_H - 6
+	call ProcRect
+	ld a, [wSaltScratch + PS_SE]
+	call ProcWallBlock
+	ld b, PROC_W - 3
+	ld c, 3
+	ld d, 6
+	ld e, PROC_H - 6
+	call ProcRect
+; road gaps through the walls
+	ld a, [wSaltScratch + PS_GN]
+	ld b, a
+	ld a, PROC_PATH
+	ld c, -3
+	ld d, 2
+	ld e, 6
+	call ProcRect
+	ld a, [wSaltScratch + PS_GS]
+	ld b, a
+	ld a, PROC_PATH
+	ld c, PROC_H - 3
+	ld d, 2
+	ld e, 6
+	call ProcRect
+	ld a, [wSaltScratch + PS_GW]
+	ld c, a
 	ld a, PROC_PATH
 	ld b, -3
-	ld c, 13
-	ld d, PROC_W + 6
+	ld d, 6
 	ld e, 2
 	call ProcRect
-; north-south gaps in the walls (same place in every chunk)
+	ld a, [wSaltScratch + PS_GE]
+	ld c, a
 	ld a, PROC_PATH
-	ld b, 14
-	ld c, PROC_H - 1
-	ld d, 2
-	ld e, 4
+	ld b, PROC_W - 3
+	ld d, 6
+	ld e, 2
 	call ProcRect
-	ld a, PROC_PATH
-	ld b, 14
-	ld c, -3
-	ld d, 2
-	ld e, 4
-	call ProcRect
-; winding north-south path
-	ld a, 14
-	ld [wSaltScratch + PS_PX], a
-	ld c, PROC_H - 1 ; row
-.path_row
-	push bc
-	ld a, [wSaltScratch + PS_PX]
-	ld b, a
-	ld a, PROC_PATH
-	ld d, 2
-	ld e, 1
-	call ProcRect
-	pop bc
-	ld a, c
-	cp 22
-	jr nc, .next_row
-	cp 16
-	jr nc, .wander
-	cp 15
-	jr z, .snap
-	cp 12
-	jr nc, .next_row
-	cp 5
-	jr nc, .wander
-	cp 4
-	jr z, .snap
-	jr .next_row
 
-.snap
-; rejoin the middle column (x = 14) with a horizontal piece
-	ld a, [wSaltScratch + PS_PX]
-	cp 14
-	jr z, .next_row
-	jr c, .snap_right
-	ld b, 14
-	sub 14
-	jr .snap_draw
-.snap_right
+; north-south road: down from the north gap to a random row, a sideways
+; jog, then down to the south gap
+	ld a, [wSaltScratch + PS_J]
+	sub 1
+	ld e, a ; rows 3 .. J+1
+	ld a, [wSaltScratch + PS_GN]
 	ld b, a
-	ld a, 14
+	ld c, 3
+	ld d, 2
+	ld a, PROC_PATH
+	call ProcRect
+	ld a, [wSaltScratch + PS_GN]
+	ld b, a
+	ld a, [wSaltScratch + PS_GS]
+	call ProcMinSpan
+	ld d, b ; width
+	ld b, a ; x
+	ld a, [wSaltScratch + PS_J]
+	ld c, a
+	ld e, 2
+	ld a, PROC_PATH
+	call ProcRect
+	ld a, [wSaltScratch + PS_J]
+	ld b, a
+	ld a, PROC_H - 3
 	sub b
-.snap_draw
-	add 2
-	ld d, a
-	push bc
-	ld a, PROC_PATH
-	ld e, 1
-	call ProcRect
-	pop bc
-	ld a, 14
-	ld [wSaltScratch + PS_PX], a
-	jr .next_row
-
-.wander
-	push bc
-	ld b, 3
-	call ProcRandMod
-	pop bc
-	and a
-	jr nz, .next_row
-	push bc
-	ld b, 2
-	call ProcRandMod
-	pop bc
-	ld b, a
-	ld a, [wSaltScratch + PS_PX]
-	ld d, a
+	ld e, a
 	ld a, b
-	and a
-	ld a, d
-	jr z, .go_left
-	cp 17
-	jr nc, .next_row
-	inc a
-	jr .shifted
-.go_left
-	cp 12
-	jr c, .next_row
-	dec a
-.shifted
-	ld [wSaltScratch + PS_PX], a
-	push bc
+	ld c, a
+	ld a, [wSaltScratch + PS_GS]
 	ld b, a
-	ld a, PROC_PATH
 	ld d, 2
-	ld e, 1
+	ld a, PROC_PATH
 	call ProcRect
-	pop bc
-.next_row
-	ld a, c
+; east-west road, the same idea
+	ld a, [wSaltScratch + PS_K]
+	sub 1
+	ld d, a ; columns 3 .. K+1
+	ld a, [wSaltScratch + PS_GW]
+	ld c, a
+	ld b, 3
+	ld e, 2
+	ld a, PROC_PATH
+	call ProcRect
+	ld a, [wSaltScratch + PS_GW]
+	ld b, a
+	ld a, [wSaltScratch + PS_GE]
+	call ProcMinSpan
+	ld e, b ; height
+	ld c, a ; y
+	ld a, [wSaltScratch + PS_K]
+	ld b, a
+	ld d, 2
+	ld a, PROC_PATH
+	call ProcRect
+	ld a, [wSaltScratch + PS_K]
+	ld b, a
+	ld a, PROC_W - 3
+	sub b
+	ld d, a
+	ld a, [wSaltScratch + PS_GE]
+	ld c, a
+	ld e, 2
+	ld a, PROC_PATH
+	call ProcRect
+; the first chunk has a trailhead: the way back to town
+	ld a, [wProcChunkX]
+	ld hl, wProcChunkY
+	or [hl]
+	ret nz
+	ld a, PROC_PATH
+	ld b, 10
+	ld c, 22
+	ld d, 2
+	ld e, 2
+	jp ProcRect
+
+ProcWallBlock:
+; a = wall style (0 trees, 1 grass) -> a = block
 	and a
+	ld a, PROC_TREE
 	ret z
-	dec c
-	jp .path_row
+	ld a, PROC_GRASS
+	ret
+
+ProcMinSpan:
+; a, b = two positions -> a = the smaller, b = their distance + 2
+	cp b
+	jr c, .a_smaller
+	sub b
+	add 2
+	ld c, a
+	ld a, b
+	ld b, c
+	ret
+.a_smaller
+	ld c, a
+	ld a, b
+	sub c
+	add 2
+	ld b, a
+	ld a, c
+	ret
+
+ProcEdge:
+; The shared edge of two chunks. b, c = chunk x, y; d = 0 for the edge on
+; its south side, 1 for the one on its east side.
+; Returns a = where the road gap is, b = wall style (0 trees, 1 open).
+	push bc
+	ld a, d
+	and a
+	ld e, $00
+	jr z, .lo
+	ld e, $e1
+.lo
+	ld a, [wPlayerID]
+	xor e
+	xor b
+	xor $a5
+	or $01
+	ld [wSaltScratch + PS_SEED], a
+	ld a, d
+	and a
+	ld e, $00
+	jr z, .hi
+	ld e, $17
+.hi
+	ld a, [wPlayerID + 1]
+	xor e
+	xor c
+	xor $3c
+	ld [wSaltScratch + PS_SEED + 1], a
+	ld b, 8
+.stir
+	call ProcRand
+	dec b
+	jr nz, .stir
+	ld a, d
+	and a
+	ld b, PROC_W - 9
+	jr z, .range
+	ld b, PROC_H - 9
+.range
+	call ProcRandMod
+	add 4
+	ld e, a ; gap
+	call ProcRand
+	and 3
+	ld a, 0
+	jr nz, .wall
+	inc a
+.wall
+	ld h, a ; style
+	pop bc
+; the way home starts in the first chunk: keep its south gap in a known spot
+	ld a, d
+	and a
+	jr nz, .done
+	ld a, b
+	or c
+	jr nz, .done
+	ld e, 14
+	ld h, 0
+.done
+	ld a, e
+	ld b, h
+	ret
 
 ProcRand:
 ; xorshift16 on the seed; returns a random byte in a
@@ -406,59 +572,6 @@ ProcScatter:
 	pop bc
 	dec b
 	jr nz, .next
-	ret
-
-SaltEdgeCheck::
-; Called when the player walks off the edge of a map (EdgeWarpScript).
-; Inside a procedural chunk the next chunk is generated by a warp into the
-; same map at the opposite edge. Sets wScriptVar to 1 when it did that.
-	xor a
-	ld [wScriptVar], a
-	ld a, [wMapGroup]
-	cp GROUP_PROC_TEST
-	ret nz
-	ld a, [wMapNumber]
-	cp MAP_PROC_TEST
-	ret nz
-	ld a, [wPlayerStepDirection]
-	and a ; DOWN
-	jr z, .down
-	cp UP
-	jr z, .up
-	cp LEFT
-	jr z, .left
-; RIGHT
-	ld hl, wProcChunkX
-	inc [hl]
-	xor a
-	ld [wXCoord], a
-	jr .go
-.left
-	ld hl, wProcChunkX
-	dec [hl]
-	ld a, PROC_W * 2 - 1
-	ld [wXCoord], a
-	jr .go
-.up
-	ld hl, wProcChunkY
-	dec [hl]
-	ld a, PROC_H * 2 - 1
-	ld [wYCoord], a
-	jr .go
-.down
-	ld hl, wProcChunkY
-	inc [hl]
-	xor a
-	ld [wYCoord], a
-.go
-	ld a, SPAWN_N_A
-	ld [wDefaultSpawnpoint], a
-	ld a, MAPSETUP_WARP
-	ldh [hMapEntryMethod], a
-	ld a, MAPSTATUS_ENTER
-	call LoadMapStatus
-	ld a, 1
-	ld [wScriptVar], a
 	ret
 
 ProcBiomeScatter:

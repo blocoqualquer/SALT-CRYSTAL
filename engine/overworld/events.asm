@@ -1029,12 +1029,7 @@ LandAfterPitfallScript:
 	end
 
 EdgeWarpScript:
-	callasm SaltEdgeCheck
-	iftrue .chunk
 	reloadend MAPSETUP_CONNECTION
-
-.chunk
-	end
 
 ChangeDirectionScript:
 	deactivatefacing 3

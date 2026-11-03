@@ -135,7 +135,7 @@ NewBarkTownSign:
 	closetext
 	loadmem wProcChunkX, 0
 	loadmem wProcChunkY, 0
-	warp PROC_TEST, 28, 49
+	warp PROC_TEST, 20, 44
 	end
 
 .no

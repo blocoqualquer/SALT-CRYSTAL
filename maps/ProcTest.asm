@@ -22,8 +22,8 @@ ProcTest_MapEvents:
 	def_warp_events
 
 	def_coord_events
-	coord_event 28, 50, -1, ProcTestLeaveScript
-	coord_event 29, 50, -1, ProcTestLeaveScript
+	coord_event 20, 45, -1, ProcTestLeaveScript
+	coord_event 21, 45, -1, ProcTestLeaveScript
 
 	def_bg_events
 

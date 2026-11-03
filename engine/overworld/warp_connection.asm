@@ -16,6 +16,10 @@ HandleContinueMap:
 
 EnterMapConnection:
 ; Return carry if a connection has been entered.
+; Leaving a procedural chunk moves the chunk coordinates.
+	ld a, [wMapGroup]
+	cp GROUP_PROC_TEST
+	jr nz, .no_chunk
 	ld a, [wMapNumber]
 	cp MAP_PROC_TEST
 	jr nz, .no_chunk
