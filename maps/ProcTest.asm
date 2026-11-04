@@ -7,11 +7,11 @@ ProcTest_MapScripts:
 	def_callbacks
 
 ProcTestLeaveScript:
-; only the first chunk has the way home
+; only the start chunk has the way home
 	readmem wProcChunkX
-	iftrue .stay
+	ifnotequal 4, .stay
 	readmem wProcChunkY
-	iftrue .stay
+	ifnotequal 4, .stay
 	warp NEW_BARK_TOWN, 8, 9
 .stay
 	end
