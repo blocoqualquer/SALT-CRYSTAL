@@ -30,6 +30,10 @@ DEF PROC_HOME     EQU 4 ; the chunk where the journey starts
 DEF NUM_PROC_BIOMES EQU 7
 DEF PROC_HOME_U   EQU 134 ; world position of the trailhead (+4 offset)
 DEF PROC_HOME_V   EQU 134
+DEF PROC_ISLE_U   EQU 123 ; centre of the island (world u, v)
+DEF PROC_ISLE_V   EQU 111
+DEF PROC_ISLE_CORE EQU 40 ; certain land within this distance
+DEF PROC_ISLE_SPAN EQU 85 ; beyond core + span there is only sea
 
 ; scratch layout (wSaltScratch)
 DEF PS_SEED  EQU 0 ; dw
@@ -152,11 +156,18 @@ ProcGenMap::
 	ld a, $ff
 	call ByteFill
 
-; everything is grass to begin with
+; everything is sea to begin with; the island is built from land blobs
 	ld hl, wOverworldMapBlocks
 	ld bc, PROC_STRIDE * PROC_ROWS
-	ld a, PROC_GRASS
+	ld a, PROC_WATER
 	call ByteFill
+	ld a, 3
+	ld [wSaltScratch + PS_LAYER], a
+	call ProcBlobLayer
+	ld a, 4
+	ld [wSaltScratch + PS_LAYER], a
+	call ProcBlobLayer
+	call ProcCore
 
 ; the three blob layers: big (cells of 16), medium (8), tiny (4)
 	xor a
@@ -171,8 +182,6 @@ ProcGenMap::
 	call ProcRidges
 	call ProcRoads
 	call ProcHome
-	call ProcCoast
-	call ProcCorners
 	jp ProcRim
 
 ProcHome:
@@ -674,6 +683,12 @@ ProcBlobLayer:
 	db 2
 	dw ProcLayerTiny
 	db 111
+	db 4 ; land: big blobs
+	dw ProcLayerBig
+	db 255
+	db 3 ; land: small blobs along the coast
+	dw ProcLayerBig
+	db 255
 
 ProcShr:
 ; a >>= PX_SHIFT
@@ -738,6 +753,9 @@ ProcCell:
 	and c
 	add b
 	ld [wSaltScratch + PS_CV], a
+	ld a, [wSaltScratch + PS_LAYER]
+	cp 3
+	jp nc, ProcLandCell
 ; biome at the centre (looked up per 8x8 square)
 	ld a, [wSaltScratch + PS_CU]
 	ld b, a
@@ -816,6 +834,8 @@ ProcCell:
 	call ProcRand
 	and c
 	ld c, a
+ProcCutK:
+; c = corner cut; stores K and places the blob
 	ld a, [wSaltScratch + PS_A]
 	cp c
 	jr nc, .cut_a
@@ -833,6 +853,7 @@ ProcCell:
 	add b
 	sub c
 	ld [wSaltScratch + PS_K], a
+ProcPlace:
 ; centre in buffer space, biased by 32: cu + 32 - U0
 	ld a, [wSaltScratch + PS_CU]
 	ld l, a
@@ -851,7 +872,7 @@ ProcCell:
 	or a
 	ret nz
 	ld a, l
-	cp 82
+	cp 140
 	ret nc
 	ld [wSaltScratch + PS_X], a
 	ld a, [wSaltScratch + PS_CV]
@@ -871,17 +892,136 @@ ProcCell:
 	or a
 	ret nz
 	ld a, l
-	cp 82
+	cp 140
 	ret nc
 	ld [wSaltScratch + PS_Y], a
 	call ProcBlob
 	jp ProcLobes
 
+ProcLandCell:
+; a land blob: the nearer to the middle of the world, the likelier it is
+; (octagonal distance from the island centre decides the odds)
+	ld a, [wSaltScratch + PS_CU]
+	sub PROC_ISLE_U
+	jr nc, .dx
+	cpl
+	inc a
+.dx
+	ld b, a
+	ld a, [wSaltScratch + PS_CV]
+	sub PROC_ISLE_V
+	jr nc, .dy
+	cpl
+	inc a
+.dy
+	ld c, a
+	srl a
+	srl a
+	srl a
+	add c ; dy * 9 / 8
+	cp b
+	jr nc, .d1
+	ld a, b
+.d1
+	ld d, a
+	ld a, b
+	add c
+	ld e, a
+	srl a
+	srl a
+	ld l, a
+	ld a, e
+	sub l ; (dx + dy) * 3 / 4
+	cp d
+	jr c, .dist
+	ld d, a
+.dist
+	ld a, d
+	sub PROC_ISLE_CORE
+	jr nc, .far
+	ld a, 255
+	jr .have_odds
+.far
+	cp PROC_ISLE_SPAN
+	jr c, .fall
+	xor a
+	jr .have_odds
+.fall
+	ld e, a
+	add a
+	add e
+	ld e, a
+	ld a, 255
+	sub e
+.have_odds
+	ld e, a
+	ld a, [wSaltScratch + PS_LAYER]
+	cp 4
+	ld a, e
+	jr nz, .compare
+	srl a
+.compare
+	ld e, a
+	ld a, [PX_ROLL]
+	cp e
+	ret nc
+	ld a, [wSaltScratch + PS_LAYER]
+	cp 4
+	jr z, .small
+	call ProcRand
+	and 7
+	add 5
+	ld [wSaltScratch + PS_A], a
+	call ProcRand
+	and 7
+	add 5
+	ld [wSaltScratch + PS_B], a
+	jr .shape
+.small
+	call ProcRand
+	and 3
+	add 2
+	ld [wSaltScratch + PS_A], a
+	call ProcRand
+	and 3
+	add 2
+	ld [wSaltScratch + PS_B], a
+.shape
+	ld a, PROC_GRASS
+	ld [wSaltScratch + PS_BLK], a
+	xor a
+	ld [wSaltScratch + PS_MODE], a
+	call ProcRand
+	and 7
+	ld c, a
+	jp ProcCutK
+
+ProcCore:
+; the heart of the island is always land
+	ld a, PROC_ISLE_U
+	ld [wSaltScratch + PS_CU], a
+	ld a, PROC_ISLE_V
+	ld [wSaltScratch + PS_CV], a
+	ld a, 34
+	ld [wSaltScratch + PS_A], a
+	ld a, 28
+	ld [wSaltScratch + PS_B], a
+	ld a, PROC_GRASS
+	ld [wSaltScratch + PS_BLK], a
+	xor a
+	ld [wSaltScratch + PS_MODE], a
+	ld a, 3
+	ld [wSaltScratch + PS_LAYER], a
+	ld c, 12
+	jp ProcCutK
+
 ProcLobes:
 ; a lumpy blob: a few smaller octagons around the main one
 	ld a, [wSaltScratch + PS_LAYER]
 	cp 2
-	ret nc
+	ret z
+	cp 4
+	ret z
 	ld a, [wSaltScratch + PS_A]
 	ld [PX_LA0], a
 	ld a, [wSaltScratch + PS_B]
@@ -953,10 +1093,10 @@ ProcLobes:
 	sub c
 	ld [wSaltScratch + PS_K], a
 	ld a, e
-	cp 90
+	cp 140
 	jr nc, .skip
 	ld a, d
-	cp 90
+	cp 140
 	jr nc, .skip
 	ld a, e
 	ld [wSaltScratch + PS_X], a
@@ -1384,7 +1524,7 @@ ProcRoads:
 ; three winding roads across the world, and three across the other way
 	ld a, PROC_PATH
 	ld [wSaltScratch + PS_BLK], a
-	xor a
+	ld a, 2
 	ld [wSaltScratch + PS_MODE], a
 	ld a, $60
 	ld [wSaltScratch + PS_K], a
