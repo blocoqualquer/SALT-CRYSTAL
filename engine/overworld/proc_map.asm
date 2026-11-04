@@ -76,6 +76,12 @@ DEF PX_POS EQUS "(wOverworldMapBlocks + 1289)"
 DEF PX_PREV EQUS "(wOverworldMapBlocks + 1290)"
 DEF PX_DEPTH EQUS "(wOverworldMapBlocks + 1291)"
 DEF PX_TYPE EQUS "(wOverworldMapBlocks + 1292)"
+DEF PX_SALTC EQUS "(wOverworldMapBlocks + 1293)"
+DEF PX_SALTD EQUS "(wOverworldMapBlocks + 1294)"
+DEF PX_MAXT EQUS "(wOverworldMapBlocks + 1295)"
+DEF PX_ROLL EQUS "(wOverworldMapBlocks + 1296)"
+DEF PX_DX EQUS "(wOverworldMapBlocks + 1297)"
+DEF PX_DY EQUS "(wOverworldMapBlocks + 1298)"
 
 ProcGenMap::
 	ld a, [wProcChunkX]
@@ -167,9 +173,7 @@ ProcFillRect:
 .row
 	push bc
 	ld a, c
-	ld hl, wOverworldMapBlocks
-	ld bc, PROC_STRIDE
-	call AddNTimes
+	call ProcRowPtr
 	pop bc
 	ld a, b
 	add l
@@ -277,8 +281,6 @@ ProcSeed:
 	call ProcRand
 	call ProcRand
 	call ProcRand
-	call ProcRand
-	call ProcRand
 	jp ProcRand
 
 ProcHash8:
@@ -376,7 +378,7 @@ ProcTryPoint:
 	cpl
 	inc a
 .dx
-	ld d, a ; |dx|
+	ld [PX_DX], a
 	inc hl
 	ld a, [wSaltScratch + PS_QV]
 	sub [hl]
@@ -384,11 +386,10 @@ ProcTryPoint:
 	cpl
 	inc a
 .dy
-	ld e, a ; |dy|
+	ld [PX_DY], a
 	inc hl
 	ld a, [hl]
 	ld [wSaltScratch + PS_TMP], a ; weights << 5 | biome
-; weights: (ax, ay) by index
 	swap a
 	srl a
 	and 7
@@ -398,35 +399,39 @@ ProcTryPoint:
 	jr nc, .wl
 	inc h
 .wl
-	ld a, [hl]
-	ld b, a ; ax in high nibble, ay in low
-	ld hl, 0
+	ld b, [hl] ; ax in the high nibble, ay in the low
+; hl = |dx| * ax + |dy| * ay
+	ld a, [PX_DX]
+	ld l, a
+	ld h, 0
+	ld a, b
 	swap a
 	and $0f
-	ld c, a
-	ld a, d
-.addx
-	push de
+	cp 2
+	jr c, .x_done
+	jr z, .x_two
+	ld a, [PX_DX]
+	ld e, a
+	ld d, 0
+	add hl, hl
+	add hl, de
+	jr .x_done
+.x_two
+	add hl, hl
+.x_done
+	ld a, [PX_DY]
 	ld e, a
 	ld d, 0
 	add hl, de
-	pop de
-	dec c
-	jr z, .xdone
-	ld a, d
-	jr .addx
-.xdone
 	ld a, b
 	and $0f
-	ld c, a
-.addy
-	push de
-	ld d, 0
+	cp 2
+	jr c, .y_done
 	add hl, de
-	pop de
-	dec c
-	jr nz, .addy
-; hl = distance; keep if smaller than the best so far
+	jr z, .y_done
+	add hl, de
+.y_done
+; keep it if it is smaller than the best so far
 	ld a, [wSaltScratch + PS_BEST + 1]
 	cp h
 	jr c, .nope
@@ -463,8 +468,10 @@ ProcBlobLayer:
 	ld [PX_SHIFT], a
 	ld a, [hli]
 	ld [PX_TBL], a
-	ld a, [hl]
+	ld a, [hli]
 	ld [PX_TBL + 1], a
+	ld a, [hl]
+	ld [PX_MAXT], a
 ; mask = (1 << shift) - 1
 	ld a, [PX_SHIFT]
 	ld b, a
@@ -539,10 +546,13 @@ ProcBlobLayer:
 .layers
 	db 4
 	dw ProcLayerBig
+	db 171
 	db 3
 	dw ProcLayerMedium
+	db 171
 	db 2
 	dw ProcLayerTiny
+	db 101
 
 ProcShr:
 ; a >>= PX_SHIFT
@@ -602,6 +612,12 @@ ProcCell:
 	and c
 	add b
 	ld [wSaltScratch + PS_CV], a
+; most cells grow nothing: roll first and skip without asking the biome
+	call ProcRand
+	ld [PX_ROLL], a
+	ld hl, PX_MAXT
+	cp [hl]
+	ret nc
 ; biome at the centre
 	ld a, [wSaltScratch + PS_CU]
 	ld b, a
@@ -620,7 +636,7 @@ ProcCell:
 	jr nc, .t
 	inc d
 .t
-	call ProcRand
+	ld a, [PX_ROLL]
 	ld b, a
 	ld c, 0
 .kind
@@ -759,9 +775,7 @@ ProcBlob:
 	cp 65
 	jp nc, .next_row
 	sub 32
-	ld hl, wOverworldMapBlocks
-	ld bc, PROC_STRIDE
-	call AddNTimes
+	call ProcRowPtr
 ; w = min(a, K - |dy|)
 	ld a, [wSaltScratch + PS_DY]
 	bit 7, a
@@ -807,31 +821,40 @@ ProcBlob:
 	jr nc, .ptr
 	inc h
 .ptr
-	ld a, [wSaltScratch + PS_MODE]
-	ld c, a
 	ld a, [wSaltScratch + PS_BLK]
 	ld e, a
-.fill
-	ld a, c
+	ld a, [wSaltScratch + PS_MODE]
 	and a
-	jr z, .write
+	jr z, .always
 	dec a
 	jr z, .grass_only
+; never over water
+.dry
 	ld a, [hl]
 	sub $30
 	cp $0b
-	jr c, .skip ; mode 2 never covers water
-	jr .write
+	jr c, .dry_skip
+	ld [hl], e
+.dry_skip
+	inc hl
+	dec b
+	jr nz, .dry
+	jr .next_row
 .grass_only
 	ld a, [hl]
 	cp PROC_GRASS
-	jr nz, .skip
-.write
+	jr nz, .grass_skip
 	ld [hl], e
-.skip
+.grass_skip
 	inc hl
 	dec b
-	jr nz, .fill
+	jr nz, .grass_only
+	jr .next_row
+.always
+	ld [hl], e
+	inc hl
+	dec b
+	jr nz, .always
 .next_row
 	ld hl, wSaltScratch + PS_DY
 	inc [hl]
@@ -848,8 +871,71 @@ ProcRoadSeg:
 	add [hl]
 	ret
 
+ProcRoadCur:
+; the road's position in the current segment (PX_POS >> 3)
+	ld a, [PX_POS]
+	srl a
+	srl a
+	srl a
+	ld b, a
+ProcRoadCurB:
+	ld a, [PX_LANE]
+	ld hl, PX_SALTC
+	add [hl]
+	ld c, a
+	ld a, [PX_SALTD]
+	ld d, a
+	call ProcRoadSeg
+	ld [PX_DEPTH], a
+	ret
+
+ProcRoadStep:
+; returns b = first, e = last position of the road on this row / column
+	ld a, [PX_POS]
+	and 7
+	jr z, .jog
+	ld a, [PX_IDX]
+	and a
+	jr nz, .single
+	call ProcRoadCur
+	jr .single
+.jog
+	call ProcRoadCur
+	ld a, [PX_POS]
+	srl a
+	srl a
+	srl a
+	dec a
+	ld b, a
+	ld a, [PX_LANE]
+	ld hl, PX_SALTC
+	add [hl]
+	ld c, a
+	ld a, [PX_SALTD]
+	ld d, a
+	call ProcRoadSeg
+	ld e, a
+	ld a, [PX_DEPTH]
+	cp e
+	jr nc, .cur_high
+	ld b, a
+	ret
+.cur_high
+	ld b, e
+	ld e, a
+	ret
+.single
+	ld a, [PX_DEPTH]
+	ld b, a
+	ld e, a
+	ret
+
 ProcRoads:
 ; three winding roads across the world, and three across the other way
+	ld a, $40
+	ld [PX_SALTC], a
+	ld a, $3b
+	ld [PX_SALTD], a
 	xor a
 .v_lane
 	ld [PX_LANE], a
@@ -872,45 +958,7 @@ ProcRoads:
 	ld hl, wSaltScratch + PS_V0
 	add [hl]
 	ld [PX_POS], a
-	srl a
-	srl a
-	srl a
-	ld b, a
-	ld a, [PX_LANE]
-	add $40
-	ld c, a
-	ld d, $3b
-	call ProcRoadSeg
-	ld [PX_DEPTH], a
-	ld a, [PX_POS]
-	and 7
-	jr nz, .v_single
-	ld a, [PX_POS]
-	srl a
-	srl a
-	srl a
-	dec a
-	ld b, a
-	ld a, [PX_LANE]
-	add $40
-	ld c, a
-	ld d, $3b
-	call ProcRoadSeg
-	ld e, a
-	ld a, [PX_DEPTH]
-	cp e
-	jr nc, .v_cur_high
-	ld b, a
-	jr .v_span
-.v_cur_high
-	ld b, e
-	ld e, a
-	jr .v_span
-.v_single
-	ld a, [PX_DEPTH]
-	ld b, a
-	ld e, a
-.v_span
+	call ProcRoadStep
 	inc e
 	ld a, [PX_IDX]
 	ld d, a
@@ -922,8 +970,12 @@ ProcRoads:
 	ld a, [PX_LANE]
 	inc a
 	cp 3
-	jp nz, .v_lane
+	jr nz, .v_lane
 
+	ld a, $50
+	ld [PX_SALTC], a
+	ld a, $4d
+	ld [PX_SALTD], a
 	xor a
 .h_lane
 	ld [PX_LANE], a
@@ -951,45 +1003,7 @@ ProcRoads:
 	ld hl, wSaltScratch + PS_U0
 	add [hl]
 	ld [PX_POS], a
-	srl a
-	srl a
-	srl a
-	ld b, a
-	ld a, [PX_LANE]
-	add $50
-	ld c, a
-	ld d, $4d
-	call ProcRoadSeg
-	ld [PX_DEPTH], a
-	ld a, [PX_POS]
-	and 7
-	jr nz, .h_single
-	ld a, [PX_POS]
-	srl a
-	srl a
-	srl a
-	dec a
-	ld b, a
-	ld a, [PX_LANE]
-	add $50
-	ld c, a
-	ld d, $4d
-	call ProcRoadSeg
-	ld e, a
-	ld a, [PX_DEPTH]
-	cp e
-	jr nc, .h_cur_high
-	ld b, a
-	jr .h_span
-.h_cur_high
-	ld b, e
-	ld e, a
-	jr .h_span
-.h_single
-	ld a, [PX_DEPTH]
-	ld b, a
-	ld e, a
-.h_span
+	call ProcRoadStep
 	inc e
 	ld a, [PX_IDX]
 	ld d, a
@@ -1001,7 +1015,7 @@ ProcRoads:
 	ld a, [PX_LANE]
 	inc a
 	cp 3
-	jp nz, .h_lane
+	jr nz, .h_lane
 	ret
 
 ProcRoadRow:
@@ -1031,9 +1045,7 @@ ProcRoadRow:
 	ld c, a
 	ld a, d
 	push bc
-	ld hl, wOverworldMapBlocks
-	ld bc, PROC_STRIDE
-	call AddNTimes
+	call ProcRowPtr
 	pop bc
 	ld a, b
 	add l
@@ -1075,9 +1087,7 @@ ProcRoadCol:
 	ld c, a
 	ld a, b
 	push bc
-	ld hl, wOverworldMapBlocks
-	ld bc, PROC_STRIDE
-	call AddNTimes
+	call ProcRowPtr
 	pop bc
 	ld a, d
 	add l
@@ -1275,9 +1285,7 @@ ProcCoastRow:
 	ret z
 	push bc
 	ld a, d
-	ld hl, wOverworldMapBlocks
-	ld bc, PROC_STRIDE
-	call AddNTimes
+	call ProcRowPtr
 	pop bc
 	ld a, e
 	add l
@@ -1300,9 +1308,7 @@ ProcCoastCol:
 	ret z
 	push bc
 	ld a, e
-	ld hl, wOverworldMapBlocks
-	ld bc, PROC_STRIDE
-	call AddNTimes
+	call ProcRowPtr
 	pop bc
 	ld a, d
 	add l
@@ -1454,8 +1460,7 @@ ProcLayerTiny:
 	db PROC_ROCK,    1, 0, 1, 0, 0, 0
 
 ProcRand:
-; xorshift16 on the seed; returns a random byte in a
-	push bc
+; xorshift16 (7, 9, 8) on the seed; returns a random byte in a
 	push de
 	push hl
 	ld hl, wSaltScratch + PS_SEED
@@ -1463,18 +1468,20 @@ ProcRand:
 	inc hl
 	ld d, [hl]
 ; x ^= x << 7
-	ld h, d
-	ld l, e
-	ld b, 7
-.shift
-	add hl, hl
-	dec b
-	jr nz, .shift
-	ld a, h
+	ld a, e
+	srl a
+	ld h, a
+	ld a, 0
+	rra
+	ld l, a
+	ld a, d
+	rrca
+	and $80
+	or h
 	xor d
 	ld d, a
-	ld a, l
-	xor e
+	ld a, e
+	xor l
 	ld e, a
 ; x ^= x >> 9
 	ld a, d
@@ -1482,7 +1489,6 @@ ProcRand:
 	xor e
 	ld e, a
 ; x ^= x << 8
-	ld a, e
 	xor d
 	ld d, a
 	ld hl, wSaltScratch + PS_SEED
@@ -1492,7 +1498,6 @@ ProcRand:
 	ld a, d
 	pop hl
 	pop de
-	pop bc
 	ret
 
 ProcRandMod:
@@ -1504,3 +1509,21 @@ ProcRandMod:
 	sub b
 	jr .loop
 
+
+ProcRowPtr:
+; hl = start of buffer row a (a * 36 + buffer); keeps bc, de
+	push de
+	ld l, a
+	ld h, 0
+	add hl, hl
+	add hl, hl ; * 4
+	ld d, h
+	ld e, l
+	add hl, hl
+	add hl, hl
+	add hl, hl ; * 32
+	add hl, de ; * 36
+	ld de, wOverworldMapBlocks
+	add hl, de
+	pop de
+	ret
