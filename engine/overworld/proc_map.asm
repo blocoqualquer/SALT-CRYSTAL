@@ -56,7 +56,19 @@ DEF PS_ROWS  EQU 22
 DEF PS_TMP   EQU 23
 
 ; the tail of the block buffer is free: voronoi points, then more scratch
-DEF PROC_PTS EQUS "(wOverworldMapBlocks + 1188)"
+DEF PX_NU EQUS "(wOverworldMapBlocks + 1188)"
+DEF PX_NV EQUS "(wOverworldMapBlocks + 1189)"
+DEF PX_TU EQUS "(wOverworldMapBlocks + 1190)"
+DEF PX_TV EQUS "(wOverworldMapBlocks + 1191)"
+DEF PX_N00 EQUS "(wOverworldMapBlocks + 1192)"
+DEF PX_N10 EQUS "(wOverworldMapBlocks + 1193)"
+DEF PX_N01 EQUS "(wOverworldMapBlocks + 1194)"
+DEF PX_N11 EQUS "(wOverworldMapBlocks + 1195)"
+DEF PX_NSH EQUS "(wOverworldMapBlocks + 1196)"
+DEF PX_NSALT EQUS "(wOverworldMapBlocks + 1197)"
+DEF PX_NMASK EQUS "(wOverworldMapBlocks + 1198)"
+DEF PX_BT EQUS "(wOverworldMapBlocks + 1200)"
+DEF PX_ELEV EQUS "(wOverworldMapBlocks + 1199)"
 DEF NUM_PROC_PTS EQU 28 ; 4 columns x 7 rows of 64x32 cells
 DEF PX_SHIFT EQUS "(wOverworldMapBlocks + 1272)"
 DEF PX_MASK EQUS "(wOverworldMapBlocks + 1273)"
@@ -91,6 +103,8 @@ DEF PX_LCNT EQUS "(wOverworldMapBlocks + 1290)"
 DEF PX_BKU EQUS "(wOverworldMapBlocks + 1281)"
 DEF PX_BKV EQUS "(wOverworldMapBlocks + 1282)"
 DEF PX_BKB EQUS "(wOverworldMapBlocks + 1283)"
+DEF PX_PB EQUS "(wOverworldMapBlocks + 1284)"
+DEF PX_PE EQUS "(wOverworldMapBlocks + 1285)"
 DEF PX_C3 EQUS "(wOverworldMapBlocks + 1278)"
 DEF PX_C1 EQUS "(wOverworldMapBlocks + 1272)"
 DEF PX_C2 EQUS "(wOverworldMapBlocks + 1275)"
@@ -133,9 +147,10 @@ ProcGenMap::
 	jr nz, .v_add
 	ld [wSaltScratch + PS_V0], a
 
-	call ProcBuildPoints
-	xor a
-	ld [PX_BKU], a
+	ld hl, PX_BT
+	ld bc, 64
+	ld a, $ff
+	call ByteFill
 
 ; everything is grass to begin with
 	ld hl, wOverworldMapBlocks
@@ -157,6 +172,7 @@ ProcGenMap::
 	call ProcRoads
 	call ProcHome
 	call ProcCoast
+	call ProcCorners
 	jp ProcRim
 
 ProcHome:
@@ -208,77 +224,6 @@ ProcFillRect:
 	jr nz, .row
 	ret
 
-ProcBuildPoints:
-; the biome diagram: one point per 64x32 cell of the world
-	ld c, 0 ; j
-.j
-	ld b, 0 ; i
-.i
-	push bc
-	ld d, $a5
-	call ProcSeed
-; index = j * 4 + i
-	pop bc
-	push bc
-	ld a, c
-	add a
-	add a
-	add b
-	ld e, a
-	add a
-	add e ; * 3
-	ld e, a
-	ld d, 0
-	ld hl, PROC_PTS
-	add hl, de
-; px = i * 64 + 16 + rand & 31
-	pop bc
-	push bc
-	ld a, b
-	swap a
-	add a
-	add a ; i * 64 (i < 4)
-	ld d, a
-	call ProcRand
-	and $1f
-	add 16
-	add d
-	ld [hli], a
-; py = j * 32 + 8 + rand & 15
-	pop bc
-	push bc
-	ld a, c
-	swap a
-	add a ; j * 32
-	ld d, a
-	call ProcRand
-	and $0f
-	add 8
-	add d
-	ld [hli], a
-; weights (3 bits) and biome
-	call ProcRand
-	and 7
-	swap a
-	add a ; << 5
-	ld d, a
-	push de
-	ld b, NUM_PROC_BIOMES
-	call ProcRandMod
-	pop de
-	or d
-	ld [hl], a
-	pop bc
-	inc b
-	ld a, b
-	cp 4
-	jr nz, .i
-	inc c
-	ld a, c
-	cp 7
-	jr nz, .j
-	ret
-
 ProcSeed:
 ; seed = hash of (b, c, d) and the trainer ID; stirred
 	ld a, [wPlayerID]
@@ -302,8 +247,72 @@ ProcHash8:
 	call ProcSeed
 	jp ProcRand
 
+ProcBiomeCoarse:
+; b = world u, c = world v; returns a = biome of the 8x8 square they are in.
+; Remembered in a small table of the squares around this chunk.
+	ld a, b
+	srl a
+	srl a
+	srl a
+	ld b, a
+	ld a, c
+	srl a
+	srl a
+	srl a
+	ld c, a
+	ld a, [wSaltScratch + PS_U0]
+	srl a
+	srl a
+	srl a
+	ld d, a
+	ld a, b
+	sub d
+	inc a
+	ld d, a ; column in the table
+	cp 8
+	jr nc, .compute
+	ld a, [wSaltScratch + PS_V0]
+	srl a
+	srl a
+	srl a
+	ld e, a
+	ld a, c
+	sub e
+	inc a
+	cp 8
+	jr nc, .compute
+	add a
+	add a
+	add a
+	add d
+	ld l, a
+	ld h, 0
+	ld de, PX_BT
+	add hl, de
+	ld a, [hl]
+	cp $ff
+	ret nz
+	push hl
+	call .compute
+	pop hl
+	ld [hl], a
+	ret
+.compute
+	ld a, b
+	add a
+	add a
+	add a
+	add 4
+	ld b, a
+	ld a, c
+	add a
+	add a
+	add a
+	add 4
+	ld c, a
+
 ProcBiomeAt:
-; b = world u, c = world v; returns a = biome
+; b = world u, c = world v; returns a = biome, from elevation and moisture
 	ld a, b
 	ld [wSaltScratch + PS_QU], a
 	ld a, c
@@ -316,7 +325,7 @@ ProcBiomeAt:
 	inc a
 .ax
 	cp 30
-	jr nc, .search
+	jr nc, .terrain
 	ld a, c
 	sub PROC_HOME_V
 	jr nc, .ay
@@ -324,149 +333,248 @@ ProcBiomeAt:
 	inc a
 .ay
 	cp 26
-	jr nc, .search
+	jr nc, .terrain
 	xor a
 	ret
-.search
-	ld a, $ff
-	ld [wSaltScratch + PS_BEST], a
-	ld [wSaltScratch + PS_BEST + 1], a
-; cell (i0, j0) = (u >> 6, v >> 5); try the 3x3 cells around it
-	ld a, [wSaltScratch + PS_QV]
-	swap a
-	srl a
-	and $07
-	dec a
-	ld c, a ; j
-	ld a, 3
-	ld [wSaltScratch + PS_DY], a
-.jloop
-	ld a, c
-	cp 7
-	jr nc, .jnext
-	ld a, [wSaltScratch + PS_QU]
-	swap a
-	srl a
-	srl a
-	and 3
-	dec a
-	ld b, a ; i
-	ld a, 3
-	ld [wSaltScratch + PS_ROWS], a
-.iloop
-	ld a, b
-	cp 4
-	jr nc, .inext
-	push bc
-	call ProcTryPoint
-	pop bc
-.inext
-	inc b
-	ld hl, wSaltScratch + PS_ROWS
-	dec [hl]
-	jr nz, .iloop
-.jnext
+.terrain
+; elevation level 0..3 (quantiles of the noise)
+	ld a, 5
+	ld [PX_NSH], a
+	ld a, $10
+	ld [PX_NSALT], a
+	call ProcNoise
+	ld c, 0
+	cp 85
+	jr c, .e_done
 	inc c
-	ld hl, wSaltScratch + PS_DY
-	dec [hl]
-	jr nz, .jloop
-	ld a, [wSaltScratch + PS_BBIO]
-	ret
-
-ProcTryPoint:
-; point (b = i, c = j): keeps the nearest in PS_BEST / PS_BBIO
+	cp 134
+	jr c, .e_done
+	inc c
+	cp 176
+	jr c, .e_done
+	inc c
+.e_done
 	ld a, c
 	add a
 	add a
-	add b
-	ld e, a
-	add a
-	add e
-	ld e, a
-	ld d, 0
-	ld hl, PROC_PTS
-	add hl, de
-	ld a, [wSaltScratch + PS_QU]
-	sub [hl]
-	jr nc, .dx
-	cpl
-	inc a
-.dx
-	ld [PX_DX], a
-	inc hl
-	ld a, [wSaltScratch + PS_QV]
-	sub [hl]
-	jr nc, .dy
-	cpl
-	inc a
-.dy
-	ld [PX_DY], a
-	inc hl
-	ld a, [hl]
-	ld [wSaltScratch + PS_TMP], a ; weights << 5 | biome
-	swap a
-	srl a
-	and 7
-	ld hl, .weights
+	ld [PX_ELEV], a ; level * 4
+; moisture level 0..3
+	ld a, 6
+	ld [PX_NSH], a
+	ld a, $20
+	ld [PX_NSALT], a
+	call ProcNoise
+	ld c, 0
+	cp 94
+	jr c, .m_done
+	inc c
+	cp 117
+	jr c, .m_done
+	inc c
+	cp 153
+	jr c, .m_done
+	inc c
+.m_done
+	ld a, [PX_ELEV]
+	add c
+	ld hl, ProcBiomeTable
 	add l
 	ld l, a
-	jr nc, .wl
+	jr nc, .t
 	inc h
-.wl
-	ld b, [hl] ; ax in the high nibble, ay in the low
-; hl = |dx| * ax + |dy| * ay
-	ld a, [PX_DX]
-	ld l, a
-	ld h, 0
-	ld a, b
-	swap a
-	and $0f
-	cp 2
-	jr c, .x_done
-	jr z, .x_two
-	ld a, [PX_DX]
-	ld e, a
-	ld d, 0
-	add hl, hl
-	add hl, de
-	jr .x_done
-.x_two
-	add hl, hl
-.x_done
-	ld a, [PX_DY]
-	ld e, a
-	ld d, 0
-	add hl, de
-	ld a, b
-	and $0f
-	cp 2
-	jr c, .y_done
-	add hl, de
-	jr z, .y_done
-	add hl, de
-.y_done
-; keep it if it is smaller than the best so far
-	ld a, [wSaltScratch + PS_BEST + 1]
-	cp h
-	jr c, .nope
-	jr nz, .better
-	ld a, [wSaltScratch + PS_BEST]
-	cp l
-	jr c, .nope
-	jr z, .nope
-.better
-	ld a, l
-	ld [wSaltScratch + PS_BEST], a
-	ld a, h
-	ld [wSaltScratch + PS_BEST + 1], a
-	ld a, [wSaltScratch + PS_TMP]
-	and $1f
-	ld [wSaltScratch + PS_BBIO], a
-.nope
+.t
+	ld a, [hl]
 	ret
 
-.weights
-	db $11, $11, $12, $21, $13, $31, $22, $11
+ProcBiomeTable:
+; rows: elevation low to high; columns: moisture dry to wet
+	db 6, 0, 4, 2 ; desert, meadow, flowers, lakes
+	db 3, 0, 4, 1 ; tall grass, meadow, flowers, forest
+	db 3, 3, 1, 1
+	db 5, 5, 5, 1 ; mountains
+
+ProcNoise:
+; smooth 2D noise 0..255 at world (PS_QU, PS_QV); PX_NSH = grid shift, PX_NSALT = salt
+	ld a, [PX_NSH]
+	sub 3
+	ld c, a
+	ld a, [wSaltScratch + PS_QU]
+.tu
+	srl a
+	dec c
+	jr nz, .tu
+	and 7
+	ld [PX_TU], a
+	ld a, [PX_NSH]
+	sub 3
+	ld c, a
+	ld a, [wSaltScratch + PS_QV]
+.tv
+	srl a
+	dec c
+	jr nz, .tv
+	and 7
+	ld [PX_TV], a
+	ld a, [PX_NSH]
+	ld c, a
+	ld a, [wSaltScratch + PS_QU]
+.su
+	srl a
+	dec c
+	jr nz, .su
+	ld [PX_NU], a
+	ld a, [PX_NSH]
+	ld c, a
+	ld a, [wSaltScratch + PS_QV]
+.sv
+	srl a
+	dec c
+	jr nz, .sv
+	ld [PX_NV], a
+; the four corners
+	ld a, [PX_NU]
+	ld b, a
+	ld a, [PX_NV]
+	ld c, a
+	call ProcNode
+	ld [PX_N00], a
+	ld a, [PX_NV]
+	inc a
+	ld c, a
+	ld a, [PX_NU]
+	ld b, a
+	call ProcNode
+	ld [PX_N01], a
+	ld a, [PX_NU]
+	inc a
+	ld b, a
+	ld a, [PX_NV]
+	inc a
+	ld c, a
+	call ProcNode
+	ld [PX_N11], a
+	ld a, [PX_NV]
+	ld c, a
+	ld a, [PX_NU]
+	inc a
+	ld b, a
+	call ProcNode
+	ld [PX_N10], a
+; along u twice, then along v
+	ld a, [PX_N00]
+	ld b, a
+	ld a, [PX_N10]
+	ld c, a
+	ld a, [PX_TU]
+	ld d, a
+	call ProcLerp8
+	ld [PX_N00], a
+	ld a, [PX_N01]
+	ld b, a
+	ld a, [PX_N11]
+	ld c, a
+	ld a, [PX_TU]
+	ld d, a
+	call ProcLerp8
+	ld c, a
+	ld a, [PX_N00]
+	ld b, a
+	ld a, [PX_TV]
+	ld d, a
+; falls into the last lerp
+
+ProcLerp8:
+; a = b + (c - b) * d >> shift
+	ld a, c
+	sub b
+	jr nc, .up
+	cpl
+	inc a
+	call ProcScale
+	ld c, a
+	ld a, b
+	sub c
+	ret
+.up
+	call ProcScale
+	add b
+	ret
+
+ProcScale:
+; a = a * d >> 3 (d = 0..7)
+	push bc
+	ld e, a
+	ld c, d
+	ld d, 0
+	ld hl, 0
+	bit 0, c
+	jr z, .b1
+	add hl, de
+.b1
+	sla e
+	rl d
+	bit 1, c
+	jr z, .b2
+	add hl, de
+.b2
+	sla e
+	rl d
+	bit 2, c
+	jr z, .b3
+	add hl, de
+.b3
+	srl h
+	rr l
+	srl h
+	rr l
+	srl h
+	rr l
+	ld a, l
+	pop bc
+	ret
+
+ProcNode:
+; b = i, c = j: a random byte per grid node, from a permutation table and the seed
+	ld a, [wPlayerID]
+	add b
+	ld hl, PX_NSALT
+	add [hl]
+	ld hl, ProcPerm
+	add l
+	ld l, a
+	jr nc, .a
+	inc h
+.a
+	ld a, [hl]
+	add c
+	ld hl, wPlayerID + 1
+	add [hl]
+	ld hl, ProcPerm
+	add l
+	ld l, a
+	jr nc, .b
+	inc h
+.b
+	ld a, [hl]
+	ret
+
+ProcPerm:
+	db 158, 28, 102, 188, 247, 177, 130, 55, 101, 157, 206, 154, 183, 107, 81, 39
+	db 114, 12, 173, 105, 174, 225, 254, 59, 230, 253, 38, 92, 87, 231, 165, 233
+	db 182, 72, 70, 80, 249, 207, 167, 186, 122, 17, 5, 192, 42, 45, 109, 77
+	db 215, 16, 171, 108, 234, 200, 33, 95, 212, 104, 175, 185, 43, 223, 116, 47
+	db 100, 115, 40, 41, 67, 88, 78, 32, 221, 97, 228, 68, 94, 117, 134, 211
+	db 86, 245, 197, 163, 132, 159, 145, 195, 11, 1, 250, 96, 148, 9, 164, 75
+	db 139, 153, 58, 36, 170, 187, 184, 133, 79, 242, 166, 205, 131, 191, 62, 237
+	db 151, 93, 162, 73, 227, 238, 64, 85, 150, 111, 140, 168, 201, 21, 196, 198
+	db 53, 216, 138, 34, 26, 246, 224, 248, 119, 194, 252, 2, 6, 204, 123, 15
+	db 236, 106, 90, 124, 4, 23, 176, 76, 241, 193, 172, 203, 125, 144, 226, 65
+	db 220, 110, 91, 10, 239, 126, 13, 8, 3, 98, 35, 179, 214, 146, 56, 63
+	db 235, 155, 149, 103, 14, 135, 89, 31, 218, 160, 113, 69, 27, 229, 209, 118
+	db 147, 24, 219, 222, 190, 54, 189, 181, 25, 19, 137, 180, 152, 112, 143, 178
+	db 51, 20, 18, 251, 57, 52, 120, 136, 66, 199, 141, 22, 30, 82, 84, 46
+	db 99, 232, 255, 48, 208, 202, 44, 127, 213, 7, 71, 217, 0, 128, 169, 161
+	db 244, 37, 60, 156, 142, 243, 121, 74, 29, 240, 210, 49, 61, 50, 83, 129
 
 ProcBlobLayer:
 ; one layer of blobs (layer in PS_LAYER)
@@ -630,44 +738,12 @@ ProcCell:
 	and c
 	add b
 	ld [wSaltScratch + PS_CV], a
-; biome at the centre (the tiny layer asks per 8x8 square and remembers it)
+; biome at the centre (looked up per 8x8 square)
 	ld a, [wSaltScratch + PS_CU]
 	ld b, a
 	ld a, [wSaltScratch + PS_CV]
 	ld c, a
-	ld a, [wSaltScratch + PS_LAYER]
-	cp 2
-	jr nz, .exact
-	ld a, b
-	and $f8
-	or 4
-	ld b, a
-	ld a, c
-	and $f8
-	or 4
-	ld c, a
-	ld a, [PX_BKU]
-	cp b
-	jr nz, .miss
-	ld a, [PX_BKV]
-	cp c
-	jr nz, .miss
-	ld a, [PX_BKB]
-	jr .have_biome
-.miss
-	push bc
-	call ProcBiomeAt
-	pop bc
-	ld [PX_BKB], a
-	ld a, b
-	ld [PX_BKU], a
-	ld a, c
-	ld [PX_BKV], a
-	ld a, [PX_BKB]
-	jr .have_biome
-.exact
-	call ProcBiomeAt
-.have_biome
+	call ProcBiomeCoarse
 ; kind thresholds for this biome
 	ld c, a
 	add a
@@ -1055,57 +1131,35 @@ ProcLerp:
 	ld a, [hl]
 	ld [wSaltScratch + PS_CV], a
 .have
-; t = position - (key << shift)
+; t = the 3 bits of the position just below the grid shift (8 steps)
 	ld a, [wSaltScratch + PS_A]
+	sub 3
 	ld c, a
 	ld a, [wSaltScratch + PS_CJ]
-	ld b, a
-	ld a, 1
-.m
-	add a
+	jr z, .no_shift
+.ts
+	srl a
 	dec c
-	jr nz, .m
-	dec a ; (1 << shift) - 1
-	and b
-	ld [wSaltScratch + PS_X], a ; t
+	jr nz, .ts
+.no_shift
+	and 7
+	ld d, a
 	ld a, [wSaltScratch + PS_CV]
 	ld hl, wSaltScratch + PS_CU
 	sub [hl] ; next - this
 	jr nc, .up
 	cpl
 	inc a
-	call .scaled
+	call ProcScale
 	ld b, a
 	ld a, [wSaltScratch + PS_CU]
 	sub b
 	ret
 .up
-	call .scaled
+	call ProcScale
 	ld b, a
 	ld a, [wSaltScratch + PS_CU]
 	add b
-	ret
-.scaled
-; a = (a * t) >> shift
-	ld e, a
-	ld d, 0
-	ld hl, 0
-	ld a, [wSaltScratch + PS_X]
-	and a
-	ret z
-	ld b, a
-.mul
-	add hl, de
-	dec b
-	jr nz, .mul
-	ld a, [wSaltScratch + PS_A]
-	ld b, a
-.shr
-	srl h
-	rr l
-	dec b
-	jr nz, .shr
-	ld a, l
 	ret
 
 ProcLerpCall:
@@ -1159,16 +1213,24 @@ ProcRidges:
 	ld [PX_C1], a
 	ld [PX_C2], a
 	ld [PX_C3], a
-	xor a
+	ld [PX_PB], a
 .v_row
 	ld [PX_IDX], a
 	ld hl, wSaltScratch + PS_V0
 	add [hl]
 	call ProcRidgeSpan
-	jr c, .v_skip
+	jr c, .v_gap
+	call ProcMergeSpan
 	ld a, [PX_IDX]
+	inc a
+	jr z, .v_skip
+	dec a
 	ld d, a
 	call ProcRoadRow
+	jr .v_skip
+.v_gap
+	ld a, $ff
+	ld [PX_PB], a
 .v_skip
 	ld a, [PX_IDX]
 	inc a
@@ -1214,16 +1276,24 @@ ProcRidges:
 	ld [PX_C1], a
 	ld [PX_C2], a
 	ld [PX_C3], a
-	xor a
+	ld [PX_PB], a
 .h_col
 	ld [PX_IDX], a
 	ld hl, wSaltScratch + PS_U0
 	add [hl]
 	call ProcRidgeSpan
-	jr c, .h_skip
+	jr c, .h_gap
+	call ProcMergeSpan
 	ld a, [PX_IDX]
+	inc a
+	jr z, .h_skip
+	dec a
 	ld d, a
 	call ProcRoadCol
+	jr .h_skip
+.h_gap
+	ld a, $ff
+	ld [PX_PB], a
 .h_skip
 	ld a, [PX_IDX]
 	inc a
@@ -1273,6 +1343,30 @@ ProcRidgeSpan:
 	scf
 	ret
 
+ProcMergeSpan:
+; b = first, e = last: widen them to meet the previous row's span, remember this one
+	ld a, b
+	ld [wSaltScratch + PS_TMP], a
+	ld a, e
+	ld [wSaltScratch + PS_ROWS], a
+	ld a, [PX_PB]
+	cp $ff
+	jr z, .remember
+	cp b
+	jr nc, .lo
+	ld b, a
+.lo
+	ld a, [PX_PE]
+	cp e
+	jr c, .remember
+	ld e, a
+.remember
+	ld a, [wSaltScratch + PS_TMP]
+	ld [PX_PB], a
+	ld a, [wSaltScratch + PS_ROWS]
+	ld [PX_PE], a
+	ret
+
 ProcRoadPos:
 ; a = position along the lane; returns a = where the lane is
 	ld [wSaltScratch + PS_CJ], a
@@ -1313,7 +1407,7 @@ ProcRoads:
 	ld [PX_BASE], a
 	ld a, $ff
 	ld [PX_C1], a
-	xor a
+	ld [PX_PB], a
 .v_row
 	ld [PX_IDX], a
 	ld hl, wSaltScratch + PS_V0
@@ -1322,9 +1416,14 @@ ProcRoads:
 	ld b, a
 	ld e, a
 	inc e
+	call ProcMergeSpan
 	ld a, [PX_IDX]
+	inc a
+	jr z, .v_prime
+	dec a
 	ld d, a
 	call ProcRoadRow
+.v_prime
 	ld a, [PX_IDX]
 	inc a
 	cp PROC_ROWS
@@ -1360,7 +1459,7 @@ ProcRoads:
 	ld [PX_BASE], a
 	ld a, $ff
 	ld [PX_C1], a
-	xor a
+	ld [PX_PB], a
 .h_col
 	ld [PX_IDX], a
 	ld hl, wSaltScratch + PS_U0
@@ -1369,9 +1468,14 @@ ProcRoads:
 	ld b, a
 	ld e, a
 	inc e
+	call ProcMergeSpan
 	ld a, [PX_IDX]
+	inc a
+	jr z, .h_prime
+	dec a
 	ld d, a
 	call ProcRoadCol
+.h_prime
 	ld a, [PX_IDX]
 	inc a
 	cp PROC_STRIDE
@@ -1606,6 +1710,100 @@ ProcCoast:
 	jr nz, .h_col
 	ret
 
+ProcCorners:
+; the four corners of the world are cut diagonally, so the land is not a box.
+; Reaches 42 blocks in from both edges, so chunks 0, 1, 6 and 7 take part.
+	ld a, [wProcChunkX]
+	cp 2
+	jr c, .x_ok
+	cp 6
+	ret c
+.x_ok
+	ld a, [wProcChunkY]
+	cp 2
+	jr c, .y_ok
+	cp 6
+	ret c
+.y_ok
+	ld a, [wProcChunkX]
+	cp 4
+	ld a, 0
+	jr c, .x_west
+	inc a
+.x_west
+	ld [wSaltScratch + PS_X], a
+	ld a, [wProcChunkY]
+	cp 4
+	ld a, 0
+	jr c, .y_north
+	inc a
+.y_north
+	ld [wSaltScratch + PS_Y], a
+	ld c, 0
+.row
+; dv = distance of this row from the north / south edge of the world
+	ld a, [wSaltScratch + PS_Y]
+	and a
+	jr nz, .south_row
+	ld a, [wSaltScratch + PS_V0]
+	add c
+	sub 4
+	jr nc, .have_dv
+	xor a
+	jr .have_dv
+.south_row
+	ld a, 219
+	ld hl, wSaltScratch + PS_V0
+	sub [hl]
+	sub c
+	jr nc, .have_dv
+	xor a
+.have_dv
+	cp 42
+	jr nc, .next_row
+	ld e, a
+	ld a, c
+	call ProcRowPtr
+	ld b, 0
+.col
+	ld a, [wSaltScratch + PS_X]
+	and a
+	jr nz, .east_col
+	ld a, [wSaltScratch + PS_U0]
+	add b
+	sub 4
+	jr nc, .have_du
+	xor a
+	jr .have_du
+.east_col
+	ld a, 243
+	push hl
+	ld hl, wSaltScratch + PS_U0
+	sub [hl]
+	pop hl
+	sub b
+	jr nc, .have_du
+	xor a
+.have_du
+	cp 42
+	jr nc, .next
+	add e
+	cp 42
+	jr nc, .next
+	ld [hl], PROC_WATER
+.next
+	inc hl
+	inc b
+	ld a, b
+	cp PROC_STRIDE
+	jr nz, .col
+.next_row
+	inc c
+	ld a, c
+	cp PROC_ROWS
+	jp nz, .row
+	ret
+
 ProcCoastAt:
 ; b = side (0 W, 1 E, 2 N, 3 S), c = position along the side;
 ; returns a = block (sea or mountain), b = depth
@@ -1631,7 +1829,7 @@ ProcCoastAt:
 ; depth: slow bends plus small bumps
 	ld a, 3
 	ld [wSaltScratch + PS_A], a
-	ld a, 7
+	ld a, 3
 	ld [wSaltScratch + PS_B], a
 	ld a, $33
 	ld [wSaltScratch + PS_K], a
@@ -1640,7 +1838,7 @@ ProcCoastAt:
 	ld [PX_DEPTH], a
 	ld a, 5
 	ld [wSaltScratch + PS_A], a
-	ld a, 7
+	ld a, 15
 	ld [wSaltScratch + PS_B], a
 	ld a, $35
 	ld [wSaltScratch + PS_K], a
@@ -1648,7 +1846,7 @@ ProcCoastAt:
 	call ProcLerp
 	ld hl, PX_DEPTH
 	add [hl]
-	add 7
+	add 6 ; depth 6..24 (deeper would reach the next chunk in)
 	ld b, a
 	ld a, [PX_TYPE]
 	ret
