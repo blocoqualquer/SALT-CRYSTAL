@@ -82,6 +82,16 @@ DEF PX_MAXT EQUS "(wOverworldMapBlocks + 1295)"
 DEF PX_ROLL EQUS "(wOverworldMapBlocks + 1296)"
 DEF PX_DX EQUS "(wOverworldMapBlocks + 1297)"
 DEF PX_DY EQUS "(wOverworldMapBlocks + 1298)"
+DEF PX_LX0 EQUS "(wOverworldMapBlocks + 1284)"
+DEF PX_LY0 EQUS "(wOverworldMapBlocks + 1285)"
+DEF PX_LA0 EQUS "(wOverworldMapBlocks + 1286)"
+DEF PX_LB0 EQUS "(wOverworldMapBlocks + 1287)"
+DEF PX_LCNT EQUS "(wOverworldMapBlocks + 1290)"
+DEF PX_BKU EQUS "(wOverworldMapBlocks + 1281)"
+DEF PX_BKV EQUS "(wOverworldMapBlocks + 1282)"
+DEF PX_BKB EQUS "(wOverworldMapBlocks + 1283)"
+DEF PX_C1 EQUS "(wOverworldMapBlocks + 1272)"
+DEF PX_C2 EQUS "(wOverworldMapBlocks + 1275)"
 
 ProcGenMap::
 	ld a, [wProcChunkX]
@@ -122,6 +132,8 @@ ProcGenMap::
 	ld [wSaltScratch + PS_V0], a
 
 	call ProcBuildPoints
+	xor a
+	ld [PX_BKU], a
 
 ; everything is grass to begin with
 	ld hl, wOverworldMapBlocks
@@ -278,7 +290,6 @@ ProcSeed:
 	xor d
 	or 1
 	ld [wSaltScratch + PS_SEED + 1], a
-	call ProcRand
 	call ProcRand
 	call ProcRand
 	jp ProcRand
@@ -457,9 +468,8 @@ ProcTryPoint:
 ProcBlobLayer:
 ; one layer of blobs (layer in PS_LAYER)
 	ld a, [wSaltScratch + PS_LAYER]
-	ld c, a
 	add a
-	add c ; * 3
+	add a ; * 4
 	ld c, a
 	ld b, 0
 	ld hl, .layers
@@ -593,6 +603,11 @@ ProcCell:
 	xor $3c
 	ld d, a
 	call ProcSeed
+; most cells grow nothing: the seed's last number is the roll
+	ld [PX_ROLL], a
+	ld hl, PX_MAXT
+	cp [hl]
+	ret nc
 ; centre
 	ld a, [wSaltScratch + PS_CI]
 	call ProcShl
@@ -612,18 +627,44 @@ ProcCell:
 	and c
 	add b
 	ld [wSaltScratch + PS_CV], a
-; most cells grow nothing: roll first and skip without asking the biome
-	call ProcRand
-	ld [PX_ROLL], a
-	ld hl, PX_MAXT
-	cp [hl]
-	ret nc
-; biome at the centre
+; biome at the centre (the tiny layer asks per 8x8 square and remembers it)
 	ld a, [wSaltScratch + PS_CU]
 	ld b, a
 	ld a, [wSaltScratch + PS_CV]
 	ld c, a
+	ld a, [wSaltScratch + PS_LAYER]
+	cp 2
+	jr nz, .exact
+	ld a, b
+	and $f8
+	or 4
+	ld b, a
+	ld a, c
+	and $f8
+	or 4
+	ld c, a
+	ld a, [PX_BKU]
+	cp b
+	jr nz, .miss
+	ld a, [PX_BKV]
+	cp c
+	jr nz, .miss
+	ld a, [PX_BKB]
+	jr .have_biome
+.miss
+	push bc
 	call ProcBiomeAt
+	pop bc
+	ld [PX_BKB], a
+	ld a, b
+	ld [PX_BKU], a
+	ld a, c
+	ld [PX_BKV], a
+	ld a, [PX_BKB]
+	jr .have_biome
+.exact
+	call ProcBiomeAt
+.have_biome
 ; kind thresholds for this biome
 	add a
 	add a
@@ -752,7 +793,100 @@ ProcCell:
 	cp 82
 	ret nc
 	ld [wSaltScratch + PS_Y], a
-	jp ProcBlob
+	call ProcBlob
+	jp ProcLobes
+
+ProcLobes:
+; a lumpy blob: a few smaller octagons around the main one
+	ld a, [wSaltScratch + PS_LAYER]
+	cp 2
+	ret nc
+	ld a, [wSaltScratch + PS_A]
+	ld [PX_LA0], a
+	ld a, [wSaltScratch + PS_B]
+	ld [PX_LB0], a
+	ld a, [wSaltScratch + PS_X]
+	ld [PX_LX0], a
+	ld a, [wSaltScratch + PS_Y]
+	ld [PX_LY0], a
+	ld a, 2
+	ld [PX_LCNT], a
+.lobe
+; centre: main centre moved by up to half the radius either way
+	ld a, [PX_LA0]
+	inc a
+	ld b, a
+	call ProcRandMod
+	ld c, a
+	ld a, [PX_LA0]
+	srl a
+	ld b, a
+	ld a, c
+	sub b
+	ld hl, PX_LX0
+	add [hl]
+	ld e, a
+	ld a, [PX_LB0]
+	inc a
+	ld b, a
+	call ProcRandMod
+	ld c, a
+	ld a, [PX_LB0]
+	srl a
+	ld b, a
+	ld a, c
+	sub b
+	ld hl, PX_LY0
+	add [hl]
+	ld d, a
+; size: about half of the main one
+	call ProcRand
+	and 1
+	ld c, a
+	ld a, [PX_LA0]
+	srl a
+	inc a
+	add c
+	ld [wSaltScratch + PS_A], a
+	call ProcRand
+	and 1
+	ld c, a
+	ld a, [PX_LB0]
+	srl a
+	inc a
+	add c
+	ld [wSaltScratch + PS_B], a
+; K = a + b - min(a, b) / 2
+	ld b, a
+	ld a, [wSaltScratch + PS_A]
+	cp b
+	jr c, .min
+	ld a, b
+.min
+	srl a
+	ld c, a
+	ld a, [wSaltScratch + PS_A]
+	ld b, a
+	ld a, [wSaltScratch + PS_B]
+	add b
+	sub c
+	ld [wSaltScratch + PS_K], a
+	ld a, e
+	cp 90
+	jr nc, .skip
+	ld a, d
+	cp 90
+	jr nc, .skip
+	ld a, e
+	ld [wSaltScratch + PS_X], a
+	ld a, d
+	ld [wSaltScratch + PS_Y], a
+	call ProcBlob
+.skip
+	ld hl, PX_LCNT
+	dec [hl]
+	jr nz, .lobe
+	ret
 
 ProcBlob:
 ; paint an octagon: half sizes a, b, corner cut so that |dx| + |dy| <= K
@@ -863,82 +997,133 @@ ProcBlob:
 	jp nz, .row
 	ret
 
-ProcRoadSeg:
-; b = segment, c = lane salt, d = hash salt; returns a = lane base + 0..7
+ProcLerp:
+; smooth 1D noise. hl = cache (key, node 0, node 1); PS_A = shift, PS_B = mask,
+; PS_K = salt, PS_CI = id, PS_CJ = position. Returns a = value 0..mask.
+	push hl
+	ld a, [wSaltScratch + PS_A]
+	ld c, a
+	ld a, [wSaltScratch + PS_CJ]
+.key
+	srl a
+	dec c
+	jr nz, .key
+	ld d, a ; key = position >> shift
+	pop hl
+	ld a, [hl]
+	cp d
+	jr z, .cached
+	ld a, d
+	ld [hli], a
+	push hl
+	ld b, d
+	ld a, [wSaltScratch + PS_CI]
+	ld c, a
+	ld a, [wSaltScratch + PS_K]
+	push de
+	ld d, a
 	call ProcHash8
-	and 7
+	pop de
+	ld hl, wSaltScratch + PS_B
+	and [hl]
+	ld [wSaltScratch + PS_CU], a
+	ld b, d
+	inc b
+	ld a, [wSaltScratch + PS_CI]
+	ld c, a
+	ld a, [wSaltScratch + PS_K]
+	ld d, a
+	call ProcHash8
+	ld hl, wSaltScratch + PS_B
+	and [hl]
+	ld [wSaltScratch + PS_CV], a
+	pop hl
+	ld a, [wSaltScratch + PS_CU]
+	ld [hli], a
+	ld a, [wSaltScratch + PS_CV]
+	ld [hl], a
+	jr .have
+.cached
+	inc hl
+	ld a, [hli]
+	ld [wSaltScratch + PS_CU], a
+	ld a, [hl]
+	ld [wSaltScratch + PS_CV], a
+.have
+; t = position - (key << shift)
+	ld a, [wSaltScratch + PS_A]
+	ld c, a
+	ld a, [wSaltScratch + PS_CJ]
+	ld b, a
+	ld a, 1
+.m
+	add a
+	dec c
+	jr nz, .m
+	dec a ; (1 << shift) - 1
+	and b
+	ld [wSaltScratch + PS_X], a ; t
+	ld a, [wSaltScratch + PS_CV]
+	ld hl, wSaltScratch + PS_CU
+	sub [hl] ; next - this
+	jr nc, .up
+	cpl
+	inc a
+	call .scaled
+	ld b, a
+	ld a, [wSaltScratch + PS_CU]
+	sub b
+	ret
+.up
+	call .scaled
+	ld b, a
+	ld a, [wSaltScratch + PS_CU]
+	add b
+	ret
+.scaled
+; a = (a * t) >> shift
+	ld e, a
+	ld d, 0
+	ld hl, 0
+	ld a, [wSaltScratch + PS_X]
+	and a
+	ret z
+	ld b, a
+.mul
+	add hl, de
+	dec b
+	jr nz, .mul
+	ld a, [wSaltScratch + PS_A]
+	ld b, a
+.shr
+	srl h
+	rr l
+	dec b
+	jr nz, .shr
+	ld a, l
+	ret
+
+ProcRoadPos:
+; a = position along the lane; returns a = where the lane is
+	ld [wSaltScratch + PS_CJ], a
+	ld a, 5
+	ld [wSaltScratch + PS_A], a
+	ld a, 31
+	ld [wSaltScratch + PS_B], a
+	ld hl, PX_C1
+	call ProcLerp
 	ld hl, PX_BASE
 	add [hl]
 	ret
 
-ProcRoadCur:
-; the road's position in the current segment (PX_POS >> 3)
-	ld a, [PX_POS]
-	srl a
-	srl a
-	srl a
-	ld b, a
-ProcRoadCurB:
-	ld a, [PX_LANE]
-	ld hl, PX_SALTC
-	add [hl]
-	ld c, a
-	ld a, [PX_SALTD]
-	ld d, a
-	call ProcRoadSeg
-	ld [PX_DEPTH], a
-	ret
-
-ProcRoadStep:
-; returns b = first, e = last position of the road on this row / column
-	ld a, [PX_POS]
-	and 7
-	jr z, .jog
-	ld a, [PX_IDX]
-	and a
-	jr nz, .single
-	call ProcRoadCur
-	jr .single
-.jog
-	call ProcRoadCur
-	ld a, [PX_POS]
-	srl a
-	srl a
-	srl a
-	dec a
-	ld b, a
-	ld a, [PX_LANE]
-	ld hl, PX_SALTC
-	add [hl]
-	ld c, a
-	ld a, [PX_SALTD]
-	ld d, a
-	call ProcRoadSeg
-	ld e, a
-	ld a, [PX_DEPTH]
-	cp e
-	jr nc, .cur_high
-	ld b, a
-	ret
-.cur_high
-	ld b, e
-	ld e, a
-	ret
-.single
-	ld a, [PX_DEPTH]
-	ld b, a
-	ld e, a
-	ret
-
 ProcRoads:
 ; three winding roads across the world, and three across the other way
-	ld a, $40
-	ld [PX_SALTC], a
-	ld a, $3b
-	ld [PX_SALTD], a
+	ld a, $60
+	ld [wSaltScratch + PS_K], a
 	xor a
 .v_lane
 	ld [PX_LANE], a
+	ld [wSaltScratch + PS_CI], a
 	ld b, a
 	ld c, $11
 	ld d, $22
@@ -950,15 +1135,18 @@ ProcRoads:
 	add a
 	add a ; lane * 64
 	add c
-	add 56
+	add 50
 	ld [PX_BASE], a
+	ld a, $ff
+	ld [PX_C1], a
 	xor a
 .v_row
 	ld [PX_IDX], a
 	ld hl, wSaltScratch + PS_V0
 	add [hl]
-	ld [PX_POS], a
-	call ProcRoadStep
+	call ProcRoadPos
+	ld b, a
+	ld e, a
 	inc e
 	ld a, [PX_IDX]
 	ld d, a
@@ -972,13 +1160,12 @@ ProcRoads:
 	cp 3
 	jr nz, .v_lane
 
-	ld a, $50
-	ld [PX_SALTC], a
-	ld a, $4d
-	ld [PX_SALTD], a
+	ld a, $70
+	ld [wSaltScratch + PS_K], a
 	xor a
 .h_lane
 	ld [PX_LANE], a
+	ld [wSaltScratch + PS_CI], a
 	ld b, a
 	ld c, $33
 	ld d, $44
@@ -995,15 +1182,18 @@ ProcRoads:
 	add a
 	add a ; lane * 56
 	add c
-	add 52
+	add 46
 	ld [PX_BASE], a
+	ld a, $ff
+	ld [PX_C1], a
 	xor a
 .h_col
 	ld [PX_IDX], a
 	ld hl, wSaltScratch + PS_U0
 	add [hl]
-	ld [PX_POS], a
-	call ProcRoadStep
+	call ProcRoadPos
+	ld b, a
+	ld e, a
 	inc e
 	ld a, [PX_IDX]
 	ld d, a
@@ -1111,6 +1301,9 @@ ProcCoast:
 	cp PROC_WORLD - 1
 	jr nz, .horizontal
 .sides
+	ld a, $ff
+	ld [PX_C1], a
+	ld [PX_C2], a
 	xor a
 .v_row
 	ld [PX_IDX], a
@@ -1166,6 +1359,9 @@ ProcCoast:
 	cp PROC_WORLD - 1
 	ret nz
 .tops
+	ld a, $ff
+	ld [PX_C1], a
+	ld [PX_C2], a
 	xor a
 .h_col
 	ld [PX_IDX], a
@@ -1220,9 +1416,9 @@ ProcCoastAt:
 ; b = side (0 W, 1 E, 2 N, 3 S), c = position along the side;
 ; returns a = block (sea or mountain), b = depth
 	ld a, b
-	ld [PX_SIDE], a
+	ld [wSaltScratch + PS_CI], a
 	ld a, c
-	ld [PX_POS], a
+	ld [wSaltScratch + PS_CJ], a
 	srl a
 	srl a
 	srl a
@@ -1238,41 +1434,27 @@ ProcCoastAt:
 	ld a, PROC_ROCK
 .kind
 	ld [PX_TYPE], a
-; depth from two scales of noise
-	ld a, [PX_POS]
-	srl a
-	srl a
-	srl a
-	ld c, a
-	ld a, [PX_SIDE]
-	ld b, a
-	ld d, $33
-	call ProcHash8
-	and 7
+; depth: slow bends plus small bumps
+	ld a, 3
+	ld [wSaltScratch + PS_A], a
+	ld a, 7
+	ld [wSaltScratch + PS_B], a
+	ld a, $33
+	ld [wSaltScratch + PS_K], a
+	ld hl, PX_C1
+	call ProcLerp
 	ld [PX_DEPTH], a
-	ld a, [PX_POS]
-	srl a
-	srl a
-	ld c, a
-	ld a, [PX_SIDE]
-	or $10
-	ld b, a
-	ld d, $35
-	call ProcHash8
-	ld c, a
-	ld a, [PX_TYPE]
-	cp PROC_WATER
-	ld a, c
-	jr nz, .rocky
-	and 7
-	add 8
-	jr .depth
-.rocky
-	and 3
-	add 7
-.depth
+	ld a, 5
+	ld [wSaltScratch + PS_A], a
+	ld a, 7
+	ld [wSaltScratch + PS_B], a
+	ld a, $35
+	ld [wSaltScratch + PS_K], a
+	ld hl, PX_C2
+	call ProcLerp
 	ld hl, PX_DEPTH
 	add [hl]
+	add 7
 	ld b, a
 	ld a, [PX_TYPE]
 	ret
@@ -1503,11 +1685,33 @@ ProcRand:
 ProcRandMod:
 ; a = random number in [0, b)
 	call ProcRand
-.loop
-	cp b
-	ret c
-	sub b
-	jr .loop
+	push de
+	push hl
+	ld e, a
+	ld d, 0
+	ld h, 0
+	ld l, 0
+	ld a, b
+	ld d, a
+; hl = e * d (8 iterations), result is the high byte
+	ld b, 8
+	ld a, e
+.mul
+	add hl, hl
+	rlca
+	jr nc, .next
+	push bc
+	ld b, 0
+	ld c, d
+	add hl, bc
+	pop bc
+.next
+	dec b
+	jr nz, .mul
+	ld a, h
+	pop hl
+	pop de
+	ret
 
 
 ProcRowPtr:
