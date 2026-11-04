@@ -20,13 +20,14 @@ DEF PROC_GRASS    EQU $02
 DEF PROC_TALL     EQU $03
 DEF PROC_FLOWERS  EQU $04
 DEF PROC_TREE     EQU $05
-DEF PROC_PATH     EQU $01
+DEF PROC_PATH     EQU $71 ; packed brown earth for roads
+DEF PROC_SAND     EQU $01 ; pale speckled ground
 DEF PROC_ROCK     EQU $0a
 DEF PROC_WATER    EQU $35
 
 DEF PROC_WORLD    EQU 8 ; chunks per side
 DEF PROC_HOME     EQU 4 ; the chunk where the journey starts
-DEF NUM_PROC_BIOMES EQU 6
+DEF NUM_PROC_BIOMES EQU 7
 DEF PROC_HOME_U   EQU 134 ; world position of the trailhead (+4 offset)
 DEF PROC_HOME_V   EQU 134
 
@@ -90,6 +91,7 @@ DEF PX_LCNT EQUS "(wOverworldMapBlocks + 1290)"
 DEF PX_BKU EQUS "(wOverworldMapBlocks + 1281)"
 DEF PX_BKV EQUS "(wOverworldMapBlocks + 1282)"
 DEF PX_BKB EQUS "(wOverworldMapBlocks + 1283)"
+DEF PX_C3 EQUS "(wOverworldMapBlocks + 1278)"
 DEF PX_C1 EQUS "(wOverworldMapBlocks + 1272)"
 DEF PX_C2 EQUS "(wOverworldMapBlocks + 1275)"
 
@@ -151,6 +153,7 @@ ProcGenMap::
 	cp 3
 	jr nz, .layer
 
+	call ProcRidges
 	call ProcRoads
 	call ProcHome
 	call ProcCoast
@@ -556,13 +559,13 @@ ProcBlobLayer:
 .layers
 	db 4
 	dw ProcLayerBig
-	db 171
+	db 191
 	db 3
 	dw ProcLayerMedium
-	db 171
+	db 181
 	db 2
 	dw ProcLayerTiny
-	db 101
+	db 111
 
 ProcShr:
 ; a >>= PX_SHIFT
@@ -666,8 +669,10 @@ ProcCell:
 	call ProcBiomeAt
 .have_biome
 ; kind thresholds for this biome
+	ld c, a
 	add a
 	add a
+	add c ; biome * 5
 	ld hl, PX_TBL
 	ld e, [hl]
 	inc hl
@@ -689,7 +694,7 @@ ProcCell:
 .next_kind
 	inc c
 	ld a, c
-	cp 4
+	cp 5
 	jr nz, .kind
 	ret ; nothing grows here
 .found
@@ -698,7 +703,7 @@ ProcCell:
 	ld a, [hli]
 	ld h, [hl]
 	ld l, a
-	ld de, 24
+	ld de, NUM_PROC_BIOMES * 5
 	add hl, de
 	ld a, c
 	add a
@@ -1103,6 +1108,171 @@ ProcLerp:
 	ld a, l
 	ret
 
+ProcLerpCall:
+; a = shift, b = mask, c = salt, hl = cache (PS_CI = id, PS_CJ = position)
+	ld [wSaltScratch + PS_A], a
+	ld a, b
+	ld [wSaltScratch + PS_B], a
+	ld a, c
+	ld [wSaltScratch + PS_K], a
+	jp ProcLerp
+
+ProcRidges:
+; mountain ranges across the middle of the world: two north-south, two east-west.
+; They have gaps; the roads that cross them make the passes.
+	ld a, PROC_ROCK
+	ld [wSaltScratch + PS_BLK], a
+	ld a, 2
+	ld [wSaltScratch + PS_MODE], a
+	xor a
+.v_ridge
+	ld [PX_LANE], a
+	add 4
+	ld [wSaltScratch + PS_CI], a
+	ld a, [PX_LANE]
+	ld b, a
+	ld c, $91
+	ld d, $93
+	call ProcHash8
+	and $0f
+	ld c, a
+	ld a, [PX_LANE]
+	ld b, a
+	add a
+	add a
+	add a
+	add a
+	ld e, a ; * 16
+	ld a, b
+	add a
+	add a
+	add a
+	add a
+	add a
+	add a
+	add a ; * 128 (mod 256)
+	sub e ; ridge * 112
+	add c
+	add 50
+	ld [PX_BASE], a
+	ld a, $ff
+	ld [PX_C1], a
+	ld [PX_C2], a
+	ld [PX_C3], a
+	xor a
+.v_row
+	ld [PX_IDX], a
+	ld hl, wSaltScratch + PS_V0
+	add [hl]
+	call ProcRidgeSpan
+	jr c, .v_skip
+	ld a, [PX_IDX]
+	ld d, a
+	call ProcRoadRow
+.v_skip
+	ld a, [PX_IDX]
+	inc a
+	cp PROC_ROWS
+	jr nz, .v_row
+	ld a, [PX_LANE]
+	inc a
+	cp 2
+	jr nz, .v_ridge
+
+	xor a
+.h_ridge
+	ld [PX_LANE], a
+	add 6
+	ld [wSaltScratch + PS_CI], a
+	ld a, [PX_LANE]
+	ld b, a
+	ld c, $92
+	ld d, $93
+	call ProcHash8
+	and $0f
+	ld c, a
+	ld a, [PX_LANE]
+	ld b, a
+	add a
+	add a
+	add a
+	add a
+	ld e, a
+	ld a, b
+	add a
+	add a
+	add a
+	add a
+	add a
+	add a
+	add a
+	sub e
+	add c
+	add 56
+	ld [PX_BASE], a
+	ld a, $ff
+	ld [PX_C1], a
+	ld [PX_C2], a
+	ld [PX_C3], a
+	xor a
+.h_col
+	ld [PX_IDX], a
+	ld hl, wSaltScratch + PS_U0
+	add [hl]
+	call ProcRidgeSpan
+	jr c, .h_skip
+	ld a, [PX_IDX]
+	ld d, a
+	call ProcRoadCol
+.h_skip
+	ld a, [PX_IDX]
+	inc a
+	cp PROC_STRIDE
+	jr nz, .h_col
+	ld a, [PX_LANE]
+	inc a
+	cp 2
+	jr nz, .h_ridge
+	ret
+
+ProcRidgeSpan:
+; a = position along the ridge; returns b = first, e = last position across it,
+; or carry set when there is a gap here
+	ld [wSaltScratch + PS_CJ], a
+	ld a, 4
+	ld b, 7
+	ld c, $83
+	ld hl, PX_C3
+	call ProcLerpCall
+	cp 2
+	jr c, .gap
+	ld a, 5
+	ld b, 31
+	ld c, $81
+	ld hl, PX_C1
+	call ProcLerpCall
+	ld hl, PX_BASE
+	add [hl]
+	ld [PX_DEPTH], a
+	ld a, 3
+	ld b, 3
+	ld c, $82
+	ld hl, PX_C2
+	call ProcLerpCall
+	add 2 ; half width 2..5
+	ld c, a
+	ld a, [PX_DEPTH]
+	sub c
+	ld b, a
+	ld a, [PX_DEPTH]
+	add c
+	ld e, a
+	and a ; clears carry
+	ret
+.gap
+	scf
+	ret
+
 ProcRoadPos:
 ; a = position along the lane; returns a = where the lane is
 	ld [wSaltScratch + PS_CJ], a
@@ -1118,6 +1288,10 @@ ProcRoadPos:
 
 ProcRoads:
 ; three winding roads across the world, and three across the other way
+	ld a, PROC_PATH
+	ld [wSaltScratch + PS_BLK], a
+	xor a
+	ld [wSaltScratch + PS_MODE], a
 	ld a, $60
 	ld [wSaltScratch + PS_K], a
 	xor a
@@ -1243,9 +1417,19 @@ ProcRoadRow:
 	jr nc, .p
 	inc h
 .p
-	ld a, PROC_PATH
 .fill
-	ld [hli], a
+	ld a, [wSaltScratch + PS_MODE]
+	and a
+	jr z, .put
+	ld a, [hl]
+	sub $30
+	cp $0b
+	jr c, .skip
+.put
+	ld a, [wSaltScratch + PS_BLK]
+	ld [hl], a
+.skip
+	inc hl
 	dec c
 	jr nz, .fill
 	ret
@@ -1287,7 +1471,17 @@ ProcRoadCol:
 .p
 	ld de, PROC_STRIDE
 .fill
-	ld [hl], PROC_PATH
+	ld a, [wSaltScratch + PS_MODE]
+	and a
+	jr z, .put
+	ld a, [hl]
+	sub $30
+	cp $0b
+	jr c, .skip
+.put
+	ld a, [wSaltScratch + PS_BLK]
+	ld [hl], a
+.skip
 	add hl, de
 	dec c
 	jr nz, .fill
@@ -1529,11 +1723,15 @@ ProcRim:
 	dec h
 .u
 	ld a, [hl]
-	pop hl
 	sub $30
 	cp $0b
-	jr c, .no_up
+	jr c, .up_water
+	call ProcMaybeSand
+	pop hl
 	set 0, d
+	jr .no_up
+.up_water
+	pop hl
 .no_up
 	ld a, c
 	cp PROC_ROWS - 1
@@ -1546,33 +1744,45 @@ ProcRim:
 	inc h
 .dn
 	ld a, [hl]
-	pop hl
 	sub $30
 	cp $0b
-	jr c, .no_down
+	jr c, .down_water
+	call ProcMaybeSand
+	pop hl
 	set 1, d
+	jr .no_down
+.down_water
+	pop hl
 .no_down
 	ld a, b
 	and a
 	jr z, .no_left
 	dec hl
 	ld a, [hl]
-	inc hl
 	sub $30
 	cp $0b
-	jr c, .no_left
+	jr c, .left_water
+	call ProcMaybeSand
+	inc hl
 	set 2, d
+	jr .no_left
+.left_water
+	inc hl
 .no_left
 	ld a, b
 	cp PROC_STRIDE - 1
 	jr z, .no_right
 	inc hl
 	ld a, [hl]
-	dec hl
 	sub $30
 	cp $0b
-	jr c, .no_right
+	jr c, .right_water
+	call ProcMaybeSand
+	dec hl
 	set 3, d
+	jr .no_right
+.right_water
+	dec hl
 .no_right
 	push hl
 	ld e, d
@@ -1591,7 +1801,33 @@ ProcRim:
 	inc c
 	ld a, c
 	cp PROC_ROWS
-	jr nz, .row
+	jp nz, .row
+	ret
+
+ProcMaybeSand:
+; hl = a land block next to water at column b, row c: grass-like ground
+; becomes sand, about 3 times out of 4 (decided by the world position)
+	ld a, [hl]
+	sub PROC_GRASS
+	cp 3
+	ret nc
+	push de
+	ld a, [wSaltScratch + PS_U0]
+	add b
+	ld d, a
+	ld a, [wSaltScratch + PS_V0]
+	add c
+	ld e, a
+	srl a
+	xor d
+	ld d, a
+	srl a
+	srl a
+	xor e
+	and 3
+	pop de
+	ret z
+	ld [hl], PROC_SAND
 	ret
 
 ProcRimBlocks:
@@ -1601,45 +1837,51 @@ ProcRimBlocks:
 	db $36, $32, $3a, $36
 	db $35, $31, $39, $35
 
-; Blob layers: 6 biomes x 4 cumulative odds (out of 256) for the 4 kinds,
-; then 4 kinds of: block, mode (0 always, 1 only on grass, 2 never on water),
+; Blob layers: 7 biomes x 5 cumulative odds (out of 256) for the 5 kinds,
+; then 5 kinds of: block, mode (0 always, 1 only on grass, 2 never on water),
 ; a base, a mask, b base, b mask, corner-cut mask.
-; biomes: meadow, forest, lakes, tall grass, flowers, mountains
+; biomes: meadow, forest, lakes, tall grass, flowers, mountains, desert
 ProcLayerBig:
-	db 10, 30, 60, 60
-	db  4, 150, 160, 160
-	db 130, 150, 160, 160
-	db  4, 14, 140, 140
-	db  4, 14, 100, 100
-	db  4, 24, 40, 170
+	db 10, 30, 60, 60, 66
+	db  4, 150, 160, 160, 160
+	db 130, 150, 160, 160, 170
+	db  4, 14, 140, 140, 140
+	db  4, 14, 100, 100, 100
+	db  4, 24, 40, 170, 170
+	db  2, 6, 6, 60, 190
 	db PROC_WATER,  0, 3, 7, 3, 3, 7 ; lake
 	db PROC_TREE,   2, 3, 7, 3, 7, 7 ; big wood
 	db PROC_TALL,   2, 3, 7, 3, 7, 7 ; tall grass field
 	db PROC_ROCK,   2, 2, 7, 2, 7, 7 ; rocky mass
+	db PROC_SAND,   2, 3, 7, 3, 3, 7 ; dunes
 
 ProcLayerMedium:
-	db 30, 90, 110, 110
-	db 10, 20, 120, 120
-	db 20, 30, 80, 80
-	db 120, 130, 150, 150
-	db 20, 150, 170, 170
-	db 10, 15, 45, 130
+	db 30, 90, 110, 110, 120
+	db 10, 20, 120, 120, 120
+	db 20, 30, 80, 80, 90
+	db 120, 130, 150, 150, 150
+	db 20, 150, 170, 170, 170
+	db 10, 15, 45, 130, 140
+	db 5, 5, 15, 60, 150
 	db PROC_TALL,    1, 1, 3, 1, 3, 3
 	db PROC_FLOWERS, 1, 1, 3, 0, 3, 3
 	db PROC_TREE,    1, 1, 3, 1, 3, 3
 	db PROC_ROCK,    1, 0, 3, 0, 1, 1
+	db PROC_SAND,    1, 1, 3, 1, 3, 3
 
 ProcLayerTiny:
-	db 15, 50, 70, 70
-	db 4, 10, 70, 70
-	db 10, 20, 40, 40
-	db 60, 70, 80, 80
-	db 10, 90, 100, 100
-	db 5, 8, 20, 90
+	db 15, 50, 70, 70, 75
+	db 4, 10, 70, 70, 70
+	db 10, 20, 40, 40, 50
+	db 60, 70, 80, 80, 80
+	db 10, 90, 100, 100, 100
+	db 5, 8, 20, 90, 100
+	db 2, 2, 6, 30, 100
 	db PROC_TREE,    1, 0, 1, 0, 0, 0
 	db PROC_FLOWERS, 1, 0, 1, 0, 1, 0
 	db PROC_TALL,    1, 0, 1, 0, 1, 0
 	db PROC_ROCK,    1, 0, 1, 0, 0, 0
+	db PROC_SAND,    1, 0, 1, 0, 1, 0
 
 ProcRand:
 ; xorshift16 (7, 9, 8) on the seed; returns a random byte in a
