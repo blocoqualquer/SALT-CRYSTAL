@@ -27,7 +27,8 @@ DEF PROC_WATER    EQU $35
 
 DEF PROC_WORLD    EQU 8 ; chunks per side
 DEF PROC_HOME     EQU 4 ; the chunk where the journey starts
-DEF NUM_PROC_BIOMES EQU 7
+DEF NUM_PROC_BIOMES EQU 9
+DEF PROC_SNOW     EQU $00 ; plain pale ground
 DEF PROC_HOME_U   EQU 134 ; world position of the trailhead (+4 offset)
 DEF PROC_HOME_V   EQU 134
 DEF PROC_ISLE_U   EQU 123 ; centre of the island (world u, v)
@@ -346,20 +347,42 @@ ProcBiomeAt:
 	xor a
 	ret
 .terrain
-; elevation level 0..3 (quantiles of the noise)
+; elevation = a bit of noise + height of the island (high in the middle)
 	ld a, 5
 	ld [PX_NSH], a
 	ld a, $10
 	ld [PX_NSALT], a
 	call ProcNoise
+	srl a
+	srl a
+	ld [PX_ELEV], a
+	ld a, [wSaltScratch + PS_QV]
+	ld c, a
+	ld a, [wSaltScratch + PS_QU]
+	call ProcIsleDist
+	add a
+	jr c, .lowland
+	cpl
+	jr .have_cent
+.lowland
+	xor a
+.have_cent
+	ld c, a
+	srl a
+	srl a
+	ld b, a
+	ld a, c
+	sub b ; * 3 / 4
+	ld hl, PX_ELEV
+	add [hl]
 	ld c, 0
-	cp 85
+	cp 75
 	jr c, .e_done
 	inc c
-	cp 134
+	cp 110
 	jr c, .e_done
 	inc c
-	cp 176
+	cp 150
 	jr c, .e_done
 	inc c
 .e_done
@@ -397,10 +420,10 @@ ProcBiomeAt:
 
 ProcBiomeTable:
 ; rows: elevation low to high; columns: moisture dry to wet
-	db 6, 0, 4, 2 ; desert, meadow, flowers, lakes
-	db 3, 0, 4, 1 ; tall grass, meadow, flowers, forest
-	db 3, 3, 1, 1
-	db 5, 5, 5, 1 ; mountains
+	db 6, 6, 8, 8 ; desert, desert, swamp, swamp (the coast)
+	db 6, 0, 4, 8 ; desert, meadow, flowers, swamp
+	db 3, 1, 1, 1 ; forest
+	db 5, 7, 7, 7 ; mountains, snow (the heart of the island)
 
 ProcNoise:
 ; smooth 2D noise 0..255 at world (PS_QU, PS_QV); PX_NSH = grid shift, PX_NSALT = salt
@@ -765,8 +788,11 @@ ProcCell:
 ; kind thresholds for this biome
 	ld c, a
 	add a
+	ld b, a
 	add a
-	add c ; biome * 5
+	add b ; biome * 6
+	add c
+	sub c
 	ld hl, PX_TBL
 	ld e, [hl]
 	inc hl
@@ -788,7 +814,7 @@ ProcCell:
 .next_kind
 	inc c
 	ld a, c
-	cp 5
+	cp 6
 	jr nz, .kind
 	ret ; nothing grows here
 .found
@@ -797,7 +823,7 @@ ProcCell:
 	ld a, [hli]
 	ld h, [hl]
 	ld l, a
-	ld de, NUM_PROC_BIOMES * 5
+	ld de, NUM_PROC_BIOMES * 6
 	add hl, de
 	ld a, c
 	add a
@@ -900,42 +926,11 @@ ProcPlace:
 
 ProcLandCell:
 ; a land blob: the nearer to the middle of the world, the likelier it is
-; (octagonal distance from the island centre decides the odds)
-	ld a, [wSaltScratch + PS_CU]
-	sub PROC_ISLE_U
-	jr nc, .dx
-	cpl
-	inc a
-.dx
-	ld b, a
 	ld a, [wSaltScratch + PS_CV]
-	sub PROC_ISLE_V
-	jr nc, .dy
-	cpl
-	inc a
-.dy
 	ld c, a
-	srl a
-	srl a
-	srl a
-	add c ; dy * 9 / 8
-	cp b
-	jr nc, .d1
-	ld a, b
-.d1
+	ld a, [wSaltScratch + PS_CU]
+	call ProcIsleDist
 	ld d, a
-	ld a, b
-	add c
-	ld e, a
-	srl a
-	srl a
-	ld l, a
-	ld a, e
-	sub l ; (dx + dy) * 3 / 4
-	cp d
-	jr c, .dist
-	ld d, a
-.dist
 	ld a, d
 	sub PROC_ISLE_CORE
 	jr nc, .far
@@ -995,6 +990,45 @@ ProcLandCell:
 	and 7
 	ld c, a
 	jp ProcCutK
+
+ProcIsleDist:
+; a = world u, c = world v; returns a = octagonal distance to the island centre
+	sub PROC_ISLE_U
+	jr nc, .dx
+	cpl
+	inc a
+.dx
+	ld b, a
+	ld a, c
+	sub PROC_ISLE_V
+	jr nc, .dy
+	cpl
+	inc a
+.dy
+	ld c, a
+	srl a
+	srl a
+	srl a
+	add c ; dy * 9 / 8
+	cp b
+	jr nc, .d1
+	ld a, b
+.d1
+	ld d, a
+	ld a, b
+	add c
+	ld e, a
+	srl a
+	srl a
+	ld l, a
+	ld a, e
+	sub l ; (dx + dy) * 3 / 4
+	cp d
+	jr c, .dist
+	ld d, a
+.dist
+	ld a, d
+	ret
 
 ProcCore:
 ; the heart of the island is always land
@@ -2175,51 +2209,60 @@ ProcRimBlocks:
 	db $36, $32, $3a, $36
 	db $35, $31, $39, $35
 
-; Blob layers: 7 biomes x 5 cumulative odds (out of 256) for the 5 kinds,
-; then 5 kinds of: block, mode (0 always, 1 only on grass, 2 never on water),
+; Blob layers: 9 biomes x 6 cumulative odds (out of 256) for the 6 kinds,
+; then 6 kinds of: block, mode (0 always, 1 only on grass, 2 never on water),
 ; a base, a mask, b base, b mask, corner-cut mask.
-; biomes: meadow, forest, lakes, tall grass, flowers, mountains, desert
+; biomes: meadow, forest, lakes, tall grass, flowers, mountains, desert, snow, swamp
 ProcLayerBig:
-	db 10, 30, 60, 60, 66
-	db  4, 150, 160, 160, 160
-	db 130, 150, 160, 160, 170
-	db  4, 14, 140, 140, 140
-	db  4, 14, 100, 100, 100
-	db  4, 24, 40, 170, 170
-	db  2, 6, 6, 60, 190
+	db 10, 30, 60, 60, 66, 66
+	db  4, 150, 160, 160, 160, 160
+	db 130, 150, 160, 160, 170, 170
+	db  4, 14, 140, 140, 140, 140
+	db  4, 14, 100, 100, 100, 100
+	db  4, 24, 40, 170, 170, 170
+	db  2, 6, 6, 60, 190, 190
+	db  0, 10, 10, 40, 40, 190
+	db 40, 60, 130, 130, 130, 130
 	db PROC_WATER,  0, 3, 7, 3, 3, 7 ; lake
 	db PROC_TREE,   2, 3, 7, 3, 7, 7 ; big wood
 	db PROC_TALL,   2, 3, 7, 3, 7, 7 ; tall grass field
 	db PROC_ROCK,   2, 2, 7, 2, 7, 7 ; rocky mass
 	db PROC_SAND,   2, 3, 7, 3, 3, 7 ; dunes
+	db PROC_SNOW,   2, 4, 7, 4, 7, 7 ; snowfield
 
 ProcLayerMedium:
-	db 30, 90, 110, 110, 120
-	db 10, 20, 120, 120, 120
-	db 20, 30, 80, 80, 90
-	db 120, 130, 150, 150, 150
-	db 20, 150, 170, 170, 170
-	db 10, 15, 45, 130, 140
-	db 5, 5, 15, 60, 150
+	db 30, 90, 110, 110, 120, 120
+	db 10, 20, 120, 120, 120, 120
+	db 20, 30, 80, 80, 90, 90
+	db 120, 130, 150, 150, 150, 150
+	db 20, 150, 170, 170, 170, 170
+	db 10, 15, 45, 130, 140, 140
+	db 5, 5, 15, 60, 150, 150
+	db 0, 0, 30, 50, 50, 175
+	db 20, 20, 90, 90, 90, 90
 	db PROC_TALL,    1, 1, 3, 1, 3, 3
 	db PROC_FLOWERS, 1, 1, 3, 0, 3, 3
 	db PROC_TREE,    1, 1, 3, 1, 3, 3
 	db PROC_ROCK,    1, 0, 3, 0, 1, 1
 	db PROC_SAND,    1, 1, 3, 1, 3, 3
+	db PROC_SNOW,    1, 1, 3, 1, 3, 3
 
 ProcLayerTiny:
-	db 15, 50, 70, 70, 75
-	db 4, 10, 70, 70, 70
-	db 10, 20, 40, 40, 50
-	db 60, 70, 80, 80, 80
-	db 10, 90, 100, 100, 100
-	db 5, 8, 20, 90, 100
-	db 2, 2, 6, 30, 100
+	db 15, 50, 70, 70, 75, 75
+	db 4, 10, 70, 70, 70, 70
+	db 10, 20, 40, 40, 50, 50
+	db 60, 70, 80, 80, 80, 80
+	db 10, 90, 100, 100, 100, 100
+	db 5, 8, 20, 90, 100, 100
+	db 2, 2, 6, 30, 100, 100
+	db 10, 10, 10, 40, 40, 100
+	db 50, 50, 90, 90, 90, 90
 	db PROC_TREE,    1, 0, 1, 0, 0, 0
 	db PROC_FLOWERS, 1, 0, 1, 0, 1, 0
 	db PROC_TALL,    1, 0, 1, 0, 1, 0
 	db PROC_ROCK,    1, 0, 1, 0, 0, 0
 	db PROC_SAND,    1, 0, 1, 0, 1, 0
+	db PROC_SNOW,    1, 0, 1, 0, 1, 0
 
 ProcRand:
 ; xorshift16 (7, 9, 8) on the seed; returns a random byte in a
