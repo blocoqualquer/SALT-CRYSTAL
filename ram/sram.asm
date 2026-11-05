@@ -60,7 +60,6 @@ SECTION "Macro Map", SRAM
 ; the island's coarse height map, made once per game (see engine/overworld/proc_map.asm)
 sMacroMagic:: db
 sMacroSeed:: dw
-sMacroMap:: ds 32 * 29
 sZone:: ds 32 * 29 / 2
 
 

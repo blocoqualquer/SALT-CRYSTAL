@@ -154,15 +154,14 @@ ProcGenMap::
 	ld [wSaltScratch + PS_V0], a
 
 
-; everything is sea to begin with; the island is built from land blobs
+; everything is open ground to begin with; walls and water come from the zones
 	call ProcWorldEnsure
 	ld hl, wOverworldMapBlocks
 	ld bc, PROC_STRIDE * PROC_ROWS
-	ld a, PROC_WATER
+	ld a, PROC_GRASS
 	call ByteFill
-	ld a, BANK(sMacroMap)
+	ld a, BANK(sZone)
 	call OpenSRAM
-	call ProcLand
 	call ProcZones
 	ld hl, PX_BT
 	ld bc, 64
@@ -205,7 +204,7 @@ ProcWorldEnsure:
 	ld a, BANK(sMacroMagic)
 	call OpenSRAM
 	ld a, [sMacroMagic]
-	cp $aa
+	cp $ab
 	jr nz, .make
 	ld a, [wPlayerID]
 	ld b, a
@@ -218,371 +217,20 @@ ProcWorldEnsure:
 	cp b
 	jr z, .done
 .make
-	call ProcWorldGen
 	call ProcZoneGen
 	ld a, [wPlayerID]
 	ld [sMacroSeed], a
 	ld a, [wPlayerID + 1]
 	ld [sMacroSeed + 1], a
-	ld a, $aa
+	ld a, $ab
 	ld [sMacroMagic], a
 .done
 	jp CloseSRAM
 
-ProcWorldGen:
-; height at every 8th block (32 x 29 points): noise plus an island-shaped mask
-	ld hl, sMacroMap
-	ld a, l
-	ld [V_PL], a
-	ld a, h
-	ld [V_PH], a
-	xor a
-	ld [V_J], a
-.row
-	xor a
-	ld [V_I], a
-.col
-	ld a, [V_I]
-	cp 3
-	jp c, .edge
-	cp 29
-	jp nc, .edge
-	ld a, [V_J]
-	cp 3
-	jp c, .edge
-	cp 26
-	jp nc, .edge
-	ld a, [V_I]
-	add a
-	add a
-	add a
-	add 4
-	ld [wSaltScratch + PS_QU], a
-	ld a, [V_J]
-	add a
-	add a
-	add a
-	add 4
-	ld [wSaltScratch + PS_QV], a
-; three octaves of noise
-	ld a, 6
-	ld [PX_NSH], a
-	ld a, $30
-	ld [PX_NSALT], a
-	call ProcNoise
-	srl a
-	ld [V_T], a
-	ld a, 5
-	ld [PX_NSH], a
-	ld a, $31
-	ld [PX_NSALT], a
-	call ProcNoise
-	srl a
-	srl a
-	ld hl, V_T
-	add [hl]
-	ld [hl], a
-	ld a, 4
-	ld [PX_NSH], a
-	ld a, $32
-	ld [PX_NSALT], a
-	call ProcNoise
-	srl a
-	srl a
-	ld hl, V_T
-	add [hl]
-	ld [hl], a
-; island mask: 255 - 2 * distance to the centre
-	ld a, [wSaltScratch + PS_QV]
-	ld c, a
-	ld a, [wSaltScratch + PS_QU]
-	call ProcIsleDist
-	ld c, a
-	srl a
-	srl a
-	add c ; 1.25 * distance
-	jr c, .nomask
-	cpl
-	cp 44
-	jr nc, .mask
-.nomask
-	ld a, 44 ; never fully flat: far noise peaks become islets
-.mask
-; h = 5/8 noise + 3/8 mask
-	ld c, a
-	srl a
-	srl a
-	ld b, a
-	ld a, c
-	srl a
-	srl a
-	srl a
-	add b
-	ld b, a
-	ld a, [V_T]
-	ld c, a
-	srl a
-	ld d, a
-	ld a, c
-	srl a
-	srl a
-	srl a
-	add d
-	add b
-	jr .store
-.edge
-	xor a
-.store
-	ld hl, V_PL
-	ld c, [hl]
-	inc hl
-	ld b, [hl]
-	ld h, b
-	ld l, c
-	ld [hli], a
-	ld a, l
-	ld [V_PL], a
-	ld a, h
-	ld [V_PH], a
-	ld a, [V_I]
-	inc a
-	ld [V_I], a
-	cp 32
-	jp nz, .col
-	ld a, [V_J]
-	inc a
-	ld [V_J], a
-	cp 29
-	jp nz, .row
-; solid ground under the start
-	ld hl, sMacroMap + 15 * 32 + 15
-	ld b, 3
-.g_row
-	ld c, 3
-.g_col
-	ld a, [hl]
-	cp 150
-	jr nc, .g_ok
-	ld a, 150
-	ld [hl], a
-.g_ok
-	inc hl
-	dec c
-	jr nz, .g_col
-	ld de, 29
-	add hl, de
-	dec b
-	jr nz, .g_row
-	ret
-
-ProcMul8:
-; a = x, c = f (0..7); returns a = x * f / 8
-	ld e, a
-	ld d, 0
-	ld hl, 0
-	bit 0, c
-	jr z, .b1
-	add hl, de
-.b1
-	sla e
-	rl d
-	bit 1, c
-	jr z, .b2
-	add hl, de
-.b2
-	sla e
-	rl d
-	bit 2, c
-	jr z, .b3
-	add hl, de
-.b3
-	srl h
-	rr l
-	srl h
-	rr l
-	srl h
-	rr l
-	ld a, l
-	ret
-
-ProcMix:
-; b = p, a = q, c = f (0..7); returns a = p + (q - p) * f / 8
-	cp b
-	jr c, .down
-	sub b
-	push bc
-	call ProcMul8
-	pop bc
-	add b
-	ret
-.down
-	cpl
-	inc a
-	add b ; p - q
-	push bc
-	call ProcMul8
-	pop bc
-	cpl
-	inc a
-	add b
-	ret
-
-ProcLand:
-; land is wherever the world map is high enough (blended between its points)
-	ld hl, wOverworldMapBlocks
-	ld a, l
-	ld [V_PL], a
-	ld a, h
-	ld [V_PH], a
-	xor a
-	ld [V_I], a
-.row
-	ld a, [wSaltScratch + PS_V0]
-	ld b, a
-	ld a, [V_I]
-	add b
-	cp 4
-	jp c, .next_row
-	sub 4
-	ld b, a
-	and 7
-	ld [V_T], a
-	ld a, b
-	srl a
-	srl a
-	srl a
-	cp 28
-	jp nc, .next_row
-	ld [V_J], a
-; the row of points blended vertically
-	ld l, a
-	ld h, 0
-	add hl, hl
-	add hl, hl
-	add hl, hl
-	add hl, hl
-	add hl, hl
-	ld de, sMacroMap
-	add hl, de
-	ld de, PX_BT
-	ld b, 32
-.vert
-	push bc
-	push hl
-	push de
-	ld a, [hl]
-	ld b, a
-	ld de, 32
-	add hl, de
-	ld a, [hl]
-	ld a, [V_T]
-	ld c, a
-	ld a, [hl]
-	call ProcMix
-	pop de
-	ld [de], a
-	inc de
-	pop hl
-	inc hl
-	pop bc
-	dec b
-	jr nz, .vert
-	xor a
-	ld [V_C], a
-.col
-	ld a, [wSaltScratch + PS_U0]
-	ld b, a
-	ld a, [V_C]
-	add b
-	cp 4
-	jp c, .skip
-	sub 4
-	ld b, a
-	and 7
-	ld [V_FX], a
-	ld a, b
-	srl a
-	srl a
-	srl a
-	ld e, a
-	ld d, 0
-	ld hl, PX_BT
-	add hl, de
-	ld a, [hli]
-	ld b, a
-	ld d, [hl]
-	ld a, [V_FX]
-	ld c, a
-	ld a, d
-	call ProcMix
-	ld [V_H], a
-; a little roughness from the permutation table
-	ld a, [wSaltScratch + PS_U0]
-	ld b, a
-	ld a, [V_C]
-	add b
-	ld e, a
-	ld d, 0
-	ld hl, ProcPerm
-	add hl, de
-	ld a, [hl]
-	ld b, a
-	ld a, [wSaltScratch + PS_V0]
-	ld c, a
-	ld a, [V_I]
-	add c
-	add b
-	ld e, a
-	ld d, 0
-	ld hl, ProcPerm
-	add hl, de
-	ld a, [hl]
-	and 3
-	ld hl, V_H
-	add [hl]
-	jr c, .land
-	cp PROC_SEA_LEVEL + 2
-	jr c, .skip
-.land
-	ld hl, V_PL
-	ld a, [hli]
-	ld h, [hl]
-	ld l, a
-	ld a, [V_C]
-	ld e, a
-	ld d, 0
-	add hl, de
-	ld [hl], PROC_GRASS
-.skip
-	ld a, [V_C]
-	inc a
-	ld [V_C], a
-	cp PROC_STRIDE
-	jp nz, .col
-.next_row
-	ld a, [V_PL]
-	ld l, a
-	ld a, [V_PH]
-	ld h, a
-	ld de, PROC_STRIDE
-	add hl, de
-	ld a, l
-	ld [V_PL], a
-	ld a, h
-	ld [V_PH], a
-	ld a, [V_I]
-	inc a
-	ld [V_I], a
-	cp PROC_ROWS
-	jp nz, .row
-	ret
-
-
 ; ---------------------------------------------------------------------------
-; The world in zones: cities, routes and biome zones laid over the island.
-; Works on a 32 x 29 grid (one cell per point of the height map, 8 blocks).
+; The world in zones. Works on a 32 x 29 grid of cells of 8 x 8 blocks.
 ; Cell byte: bit 3 = route, bits 0-2 = kind (0 wall / city when on a route,
-; 1 meadow, 2 forest, 3 desert, 4 snow, 5 swamp, 6 mountain, 7 sea bay /
+; 1 meadow, 2 forest, 3 desert, 4 snow, 5 swamp, 6 mountain, 7 sea /
 ; cave entrance when on a route).
 
 DEF ZB    EQUS "(wOverworldMapBlocks)"
@@ -616,10 +264,18 @@ DEF ZV_BB   EQUS "(wOverworldMapBlocks + 1049)"
 DEF ZV_WANT EQUS "(wOverworldMapBlocks + 1050)"
 DEF ZV_TRY  EQUS "(wOverworldMapBlocks + 1051)"
 DEF ZV_IN   EQUS "(wOverworldMapBlocks + 1052)" ; 16 bytes
-DEF ZQUEUE  EQUS "(sScratch + 928)"
-DEF Z_LAND  EQU 132
+DEF ZV_CI   EQUS "(wOverworldMapBlocks + 1096)"
+DEF ZV_CJ   EQUS "(wOverworldMapBlocks + 1097)"
+DEF ZV_AX   EQUS "(wOverworldMapBlocks + 1098)"
+DEF ZV_TGT  EQUS "(wOverworldMapBlocks + 1099)"
+DEF ZV_X1   EQUS "(wOverworldMapBlocks + 1100)"
+DEF ZV_Y1   EQUS "(wOverworldMapBlocks + 1101)"
+DEF ZV_MODE EQUS "(wOverworldMapBlocks + 1102)"
 
 ProcZoneGen:
+; the world as a set of zones: points of interest joined by routes, each route
+; running through zones of different kinds. The land and sea of the island
+; are only a picture drawn afterwards.
 	ld b, 0
 	ld c, 0
 	ld d, $5a
@@ -637,11 +293,6 @@ ProcZoneGen:
 	ld [ZV_S], a
 	ld a, 528 / 256
 	ld [ZV_S + 1], a
-; everything reachable from the start
-	ld a, $ff
-	ld [ZV_T], a
-	ld [ZV_T + 1], a
-	call ZBfs
 	call ZPois
 	call ZEdges
 ; lay the routes
@@ -663,21 +314,26 @@ ProcZoneGen:
 	ld a, [hl]
 	ld [ZV_B], a
 	ld a, [ZV_A]
-	call ZPoiIdx
-	ld a, l
-	ld [ZV_S], a
-	ld a, h
-	ld [ZV_S + 1], a
+	add a
+	ld e, a
+	ld d, 0
+	ld hl, ZPOI
+	add hl, de
+	ld a, [hli]
+	ld [ZV_CI], a
+	ld a, [hl]
+	ld [ZV_CJ], a
 	ld a, [ZV_B]
-	call ZPoiIdx
-	ld a, l
-	ld [ZV_T], a
-	ld a, h
-	ld [ZV_T + 1], a
-	call ZBfs
-	jr nc, .route_next
-	call ZWalk
-.route_next
+	add a
+	ld e, a
+	ld d, 0
+	ld hl, ZPOI
+	add hl, de
+	ld a, [hli]
+	ld [ZV_X1], a
+	ld a, [hl]
+	ld [ZV_Y1], a
+	call ZRoute
 	ld a, [ZV_K]
 	inc a
 	ld [ZV_K], a
@@ -734,250 +390,156 @@ ZRowOf:
 	or l
 	ret
 
-ZPoiIdx:
-; a = POI number; returns hl = its cell index
-	add a
-	ld e, a
-	ld d, 0
-	ld hl, ZPOI
-	add hl, de
-	ld a, [hli]
-	ld b, a
-	ld c, [hl]
-	jr ZIdx
-
-ZDelta:
-	dw 1, -1, 32, -32
-
-ZPush:
-; de = cell index
-	ld a, [ZV_TAIL]
-	ld l, a
-	ld h, 0
-	add hl, hl
-	ld bc, ZQUEUE
-	add hl, bc
-	ld [hl], e
-	inc hl
-	ld [hl], d
-	ld a, [ZV_TAIL]
-	inc a
-	ld [ZV_TAIL], a
-	ret
-
-ZBfs:
-; breadth first search over land from ZV_S to ZV_T (or everywhere when ZV_T = $ffff);
-; leaves in sScratch how each cell was reached; carry when the target was found
-	ld hl, sScratch
-	ld bc, 928
-	xor a
-	call ByteFill
-	xor a
-	ld [ZV_HEAD], a
-	ld [ZV_TAIL], a
-	ld a, [ZV_S]
-	ld e, a
-	ld a, [ZV_S + 1]
-	ld d, a
-	ld hl, sScratch
-	add hl, de
-	ld [hl], 5
-	call ZPush
-.loop
-	ld a, [ZV_HEAD]
-	ld b, a
-	ld a, [ZV_TAIL]
-	cp b
-	jp z, .none
-	ld a, b
-	ld l, a
-	ld h, 0
-	add hl, hl
-	ld bc, ZQUEUE
-	add hl, bc
-	ld e, [hl]
-	inc hl
-	ld d, [hl]
-	ld a, [ZV_HEAD]
-	inc a
-	ld [ZV_HEAD], a
-	ld a, [ZV_T]
-	cp e
-	jr nz, .expand
-	ld a, [ZV_T + 1]
-	cp d
-	jr z, .found
-.expand
-	ld a, e
-	ld [ZV_CUR], a
-	ld a, d
-	ld [ZV_CUR + 1], a
-	ld b, 4
+ZRoute:
+; a route from (ZV_CI, ZV_CJ) to (ZV_X1, ZV_Y1): straight legs, sometimes with a jog in the middle
+	call ZMark
+	ld b, 2
 	call ProcRandMod
-	ld [ZV_ROT], a
-	ld a, 4
-	ld [ZV_TMP + 20], a
-.dirs
-	ld a, [ZV_ROT]
-	and 3
+	ld [ZV_MODE], a
+	ld [ZV_AX], a
+; distance
+	ld a, [ZV_CI]
 	ld b, a
-	call ZNeighbor
-	ld a, [ZV_ROT]
+	ld a, [ZV_X1]
+	sub b
+	jr nc, .da
+	cpl
 	inc a
-	ld [ZV_ROT], a
-	ld a, [ZV_TMP + 20]
-	dec a
-	ld [ZV_TMP + 20], a
-	jr nz, .dirs
-	jp .loop
-.found
-	scf
-	ret
-.none
-	and a
+.da
+	ld c, a
+	ld a, [ZV_CJ]
+	ld b, a
+	ld a, [ZV_Y1]
+	sub b
+	jr nc, .db
+	cpl
+	inc a
+.db
+	add c
+	cp 12
+	jr c, .plain
+; with a jog: halfway along the first axis, across, then the rest
+	ld a, [ZV_MODE]
+	or a
+	jr nz, .jog_v
+	ld a, [ZV_CI]
+	ld b, a
+	ld a, [ZV_X1]
+	add b
+	srl a
+	call ZLegTo
+	jr .jog_rest
+.jog_v
+	ld a, [ZV_CJ]
+	ld b, a
+	ld a, [ZV_Y1]
+	add b
+	srl a
+	call ZLegTo
+.jog_rest
+	ld a, [ZV_MODE]
+	xor 1
+	ld [ZV_AX], a
+	call ZEndOf
+	call ZLegTo
+	ld a, [ZV_MODE]
+	ld [ZV_AX], a
+	call ZEndOf
+	jp ZLegTo
+.plain
+	call ZEndOf
+	call ZLegTo
+	ld a, [ZV_AX]
+	xor 1
+	ld [ZV_AX], a
+	call ZEndOf
+	jp ZLegTo
+
+ZEndOf:
+; a = where the route ends along the axis in ZV_AX
+	ld a, [ZV_AX]
+	or a
+	ld a, [ZV_X1]
+	ret z
+	ld a, [ZV_Y1]
 	ret
 
-ZNeighbor:
-; b = direction (0 east, 1 west, 2 south, 3 north) from the cell in ZV_CUR
-	ld a, b
-	ld [ZV_TMP], a
-	ld a, [ZV_CUR]
-	ld e, a
-	ld a, [ZV_CUR + 1]
-	ld d, a
-	ld a, b
+ZLegTo:
+; walks along the axis in ZV_AX until the coordinate equals a, marking every cell
+	ld [ZV_TGT], a
+.loop
+	ld a, [ZV_AX]
 	or a
-	jr z, .east
-	dec a
-	jr z, .west
-	dec a
-	jr z, .south
-	call ZRowOf
-	or a
+	jr nz, .vert
+	ld hl, ZV_CI
+	jr .step
+.vert
+	ld hl, ZV_CJ
+.step
+	ld a, [ZV_TGT]
+	cp [hl]
 	ret z
-	jr .go
-.east
-	ld a, e
-	and 31
-	cp 31
-	ret z
-	jr .go
-.west
-	ld a, e
-	and 31
-	ret z
-	jr .go
-.south
-	call ZRowOf
-	cp 28
-	ret nc
-.go
-	ld a, [ZV_TMP]
-	add a
+	jr c, .down
+	inc [hl]
+	jr .mark
+.down
+	dec [hl]
+.mark
+	call ZMark
+	jr .loop
+
+ZMark:
+; marks the cell at (ZV_CI, ZV_CJ) as route and lets the zone logic paint around it
+	ld a, [ZV_CI]
+	ld b, a
+	ld a, [ZV_CJ]
 	ld c, a
-	ld b, 0
-	ld hl, ZDelta
-	add hl, bc
-	ld a, [hli]
-	ld h, [hl]
-	ld l, a
+	call ZIdx
+	ld a, l
+	ld [ZV_CUR], a
+	ld a, h
+	ld [ZV_CUR + 1], a
+	ld de, ZB
 	add hl, de
-	ld b, h
-	ld c, l
-	ld hl, sMacroMap
-	add hl, bc
 	ld a, [hl]
-	cp Z_LAND
-	ret c
-	ld hl, sScratch
-	add hl, bc
-	ld a, [hl]
-	or a
-	ret nz
-	ld a, [ZV_TMP]
-	inc a
+	or 8
 	ld [hl], a
-	ld d, b
-	ld e, c
-	jp ZPush
+	jp ZSegment
 
 ZPois:
-; scatter the points of interest on reachable land, away from each other
-	ld a, [ZV_S]
-	ld e, a
-	ld a, [ZV_S + 1]
-	ld d, a
-	call ZRowOf
-	ld [ZV_TJ], a
-	ld a, [ZV_S]
-	and 31
+; scatter the points of interest, away from each other
+	ld a, 16
 	ld [ZV_TI], a
+	ld [ZV_TJ], a
 	ld hl, ZPOI
-	ld a, [ZV_TI]
+	ld a, 16
 	ld [hli], a
-	ld a, [ZV_TJ]
 	ld [hl], a
 	ld a, 1
 	ld [ZV_N], a
 	ld b, 5
 	call ProcRandMod
-	add 16
+	add 14
 	ld [ZV_WANT], a
 	ld a, 255
 	ld [ZV_TRY], a
-	ld a, 5
+	ld a, 6
 	ld [ZV_B], a
 .try
 	ld b, 32
 	call ProcRandMod
-	cp 4
+	cp 3
 	jp c, .next
 	cp 28
 	jp nc, .next
 	ld [ZV_TI], a
 	ld b, 32
 	call ProcRandMod
-	cp 4
+	cp 3
 	jp c, .next
 	cp 25
 	jp nc, .next
 	ld [ZV_TJ], a
-; the point and its four neighbours two cells away must be reachable
-	ld a, [ZV_TI]
-	ld b, a
-	ld a, [ZV_TJ]
-	ld c, a
-	call ZReach
-	jp z, .next
-	ld a, [ZV_TI]
-	sub 2
-	ld b, a
-	ld a, [ZV_TJ]
-	ld c, a
-	call ZReach
-	jp z, .next
-	ld a, [ZV_TI]
-	add 2
-	ld b, a
-	ld a, [ZV_TJ]
-	ld c, a
-	call ZReach
-	jp z, .next
-	ld a, [ZV_TI]
-	ld b, a
-	ld a, [ZV_TJ]
-	sub 2
-	ld c, a
-	call ZReach
-	jp z, .next
-	ld a, [ZV_TI]
-	ld b, a
-	ld a, [ZV_TJ]
-	add 2
-	ld c, a
-	call ZReach
-	jp z, .next
-; far enough from the others
 	ld a, [ZV_N]
 	ld [ZV_K], a
 	ld hl, ZPOI
@@ -1000,13 +562,12 @@ ZPois:
 	inc a
 .fb
 	add b
-	cp 5
+	cp 6
 	jp c, .next
 	ld a, [ZV_K]
 	dec a
 	ld [ZV_K], a
 	jr nz, .far
-; accept
 	ld a, [ZV_N]
 	add a
 	ld e, a
@@ -1036,15 +597,6 @@ ZPois:
 	ld a, 255
 	ld [ZV_TRY], a
 	jp .try
-
-ZReach:
-; b = i, c = j; zero flag when the cell was not reached
-	call ZIdx
-	ld de, sScratch
-	add hl, de
-	ld a, [hl]
-	or a
-	ret
 
 ZEdges:
 ; a spanning tree over the points (shortest links first), then a few extra loops
@@ -1253,53 +805,6 @@ ZDist:
 	add b
 	ret
 
-ZWalk:
-; walk back from the target to the start along the search result, laying the route
-	ld a, [ZV_T]
-	ld e, a
-	ld a, [ZV_T + 1]
-	ld d, a
-	xor a
-	ld [ZV_SEG], a
-.step
-	ld a, e
-	ld [ZV_CUR], a
-	ld a, d
-	ld [ZV_CUR + 1], a
-	ld hl, ZB
-	add hl, de
-	ld a, [hl]
-	or 8
-	ld [hl], a
-	call ZSegment
-	ld a, [ZV_CUR]
-	ld e, a
-	ld a, [ZV_CUR + 1]
-	ld d, a
-	ld hl, sScratch
-	add hl, de
-	ld a, [hl]
-	cp 5
-	ret z
-	or a
-	ret z
-	dec a
-	add a
-	ld c, a
-	ld b, 0
-	ld hl, ZDelta
-	add hl, bc
-	ld a, [hli]
-	ld h, [hl]
-	ld l, a
-	ld a, e
-	sub l
-	ld e, a
-	ld a, d
-	sbc h
-	ld d, a
-	jr .step
-
 ZSegment:
 	ld a, [ZV_SEG]
 	or a
@@ -1326,6 +831,7 @@ ZSegment:
 	ret
 
 ZPickKind:
+; the kind of zone for the next stretch of route, from two noise fields at the cell
 	ld a, [ZV_CUR]
 	and 31
 	ld [ZV_I], a
@@ -1335,10 +841,6 @@ ZPickKind:
 	ld d, a
 	call ZRowOf
 	ld [ZV_J], a
-	ld hl, sMacroMap
-	add hl, de
-	ld a, [hl]
-	ld [ZV_TMP], a
 	ld a, [ZV_I]
 	add a
 	add a
@@ -1351,7 +853,13 @@ ZPickKind:
 	add a
 	add 4
 	ld [wSaltScratch + PS_QV], a
-	ld a, 6
+	ld a, 5
+	ld [PX_NSH], a
+	ld a, $10
+	ld [PX_NSALT], a
+	call ProcNoise
+	ld [ZV_TMP], a
+	ld a, 5
 	ld [PX_NSH], a
 	ld a, $20
 	ld [PX_NSALT], a
@@ -1362,20 +870,20 @@ ZPickKind:
 	xor a
 	ld [ZV_CAVE], a
 	ld a, [ZV_TMP]
-	cp 175
+	cp 196
 	jr nc, .snow
-	cp 160
+	cp 172
 	jr nc, .mount
-	cp 150
+	cp 128
 	jr nc, .mid
 	ld a, [ZV_TJ]
-	cp 110
+	cp 122
 	jr c, .desert
-	cp 150
+	cp 140
 	jr nc, .swamp
 .mid
 	ld a, [ZV_TJ]
-	cp 115
+	cp 110
 	jr c, .rad
 	ld a, 2
 	jr .set
@@ -1470,26 +978,23 @@ ZPaint:
 	ld b, a
 	ld a, [ZV_I]
 	add b
-	cp 32
+	cp 31
 	jr nc, .skip
+	or a
+	jr z, .skip
 	ld [ZV_TI], a
 	ld a, [ZV_DY]
 	ld b, a
 	ld a, [ZV_J]
 	add b
-	cp 29
+	cp 28
 	jr nc, .skip
+	or a
+	jr z, .skip
 	ld c, a
 	ld a, [ZV_TI]
 	ld b, a
 	call ZIdx
-	push hl
-	ld de, sMacroMap
-	add hl, de
-	ld a, [hl]
-	pop hl
-	cp Z_LAND
-	jr c, .skip
 	ld de, ZB
 	add hl, de
 	ld a, [hl]
@@ -1557,13 +1062,6 @@ ZCities:
 	ld a, [ZV_TI]
 	ld b, a
 	call ZIdx
-	push hl
-	ld de, sMacroMap
-	add hl, de
-	ld a, [hl]
-	pop hl
-	cp Z_LAND
-	jr c, .cskip
 	ld de, ZB
 	add hl, de
 	ld a, [ZV_DX]
@@ -1599,77 +1097,80 @@ ZCities:
 	jp .city
 
 ZBays:
-; patches of sea next to the coast
-	ld a, 24
+; patches of sea beside a route
+	ld a, 60
 	ld [ZV_K], a
-	ld b, 0
+	ld a, 6
+	ld [ZV_B], a
 .try
 	ld b, 32
 	call ProcRandMod
-	cp 5
+	cp 4
 	jp c, .next
-	cp 27
+	cp 28
 	jp nc, .next
 	ld [ZV_I], a
 	ld b, 29
 	call ProcRandMod
-	cp 5
+	cp 4
 	jp c, .next
-	cp 24
+	cp 25
 	jp nc, .next
 	ld [ZV_J], a
-; open sea with land beside it
+; an empty cell with a route right beside it
 	ld a, [ZV_I]
 	ld b, a
 	ld a, [ZV_J]
 	ld c, a
 	call ZIdx
-	ld de, sMacroMap
+	ld de, ZB
 	add hl, de
 	ld a, [hl]
-	cp Z_LAND
-	jp nc, .next
-	ld de, 3
+	or a
+	jp nz, .next
+	inc hl
+	ld a, [hl]
+	dec hl
+	dec hl
+	and 8
+	jr nz, .paint
+	ld a, [hl]
+	and 8
+	jr nz, .paint
+	ld de, 33
 	add hl, de
 	ld a, [hl]
-	cp Z_LAND
-	jp nc, .paint
-	ld de, -6
+	and 8
+	jr nz, .paint
+	ld de, -64
 	add hl, de
 	ld a, [hl]
-	cp Z_LAND
-	jp c, .next
+	and 8
+	jp z, .next
 .paint
 	ld a, $fe
 	ld [ZV_DY], a
 .bdy
-	ld a, $fd
+	ld a, $fc
 	ld [ZV_DX], a
 .bdx
 	ld a, [ZV_DX]
 	ld b, a
 	ld a, [ZV_I]
 	add b
-	cp 32
+	cp 31
 	jr nc, .bskip
 	ld [ZV_TI], a
 	ld a, [ZV_DY]
 	ld b, a
 	ld a, [ZV_J]
 	add b
-	cp 29
+	cp 28
 	jr nc, .bskip
 	ld c, a
 	ld a, [ZV_TI]
 	ld b, a
 	call ZIdx
-	push hl
-	ld de, sMacroMap
-	add hl, de
-	ld a, [hl]
-	pop hl
-	cp Z_LAND
-	jr nc, .bskip
 	ld de, ZB
 	add hl, de
 	ld a, [hl]
@@ -1687,12 +1188,17 @@ ZBays:
 	ld [ZV_DY], a
 	cp 2
 	jr nz, .bdy
+	ld a, [ZV_B]
+	dec a
+	ld [ZV_B], a
+	ret z
 .next
 	ld a, [ZV_K]
 	dec a
 	ld [ZV_K], a
 	jp nz, .try
 	ret
+
 
 ProcZones:
 ; walls around the walkable zones, and the ground each zone is made of
