@@ -152,23 +152,20 @@ ProcGenMap::
 	jr nz, .v_add
 	ld [wSaltScratch + PS_V0], a
 
-	ld hl, PX_BT
-	ld bc, 64
-	ld a, $ff
-	call ByteFill
 
 ; everything is sea to begin with; the island is built from land blobs
 	ld hl, wOverworldMapBlocks
 	ld bc, PROC_STRIDE * PROC_ROWS
 	ld a, PROC_WATER
 	call ByteFill
-	ld a, 3
-	ld [wSaltScratch + PS_LAYER], a
-	call ProcBlobLayer
-	ld a, 4
-	ld [wSaltScratch + PS_LAYER], a
-	call ProcBlobLayer
-	call ProcCore
+	call ProcWorldEnsure
+	ld a, BANK(sMacroMap)
+	call OpenSRAM
+	call ProcLand
+	ld hl, PX_BT
+	ld bc, 64
+	ld a, $ff
+	call ByteFill
 
 ; the three blob layers: big (cells of 16), medium (8), tiny (4)
 	xor a
@@ -183,7 +180,375 @@ ProcGenMap::
 	call ProcRidges
 	call ProcRoads
 	call ProcHome
-	jp ProcRim
+	call ProcRim
+	jp CloseSRAM
+
+
+DEF V_PL EQUS "(PX_BT + 32)"
+DEF V_PH EQUS "(PX_BT + 33)"
+DEF V_I  EQUS "(PX_BT + 34)"
+DEF V_J  EQUS "(PX_BT + 35)"
+DEF V_T  EQUS "(PX_BT + 36)"
+DEF V_C  EQUS "(PX_BT + 37)"
+DEF V_FX EQUS "(PX_BT + 38)"
+DEF V_H  EQUS "(PX_BT + 39)"
+DEF V_IC EQUS "(PX_BT + 40)"
+DEF PROC_SEA_LEVEL EQU 128
+
+ProcWorldEnsure:
+; makes the world map if this game does not have one yet
+	ld a, BANK(sMacroMagic)
+	call OpenSRAM
+	ld a, [sMacroMagic]
+	cp $a7
+	jr nz, .make
+	ld a, [wPlayerID]
+	ld b, a
+	ld a, [sMacroSeed]
+	cp b
+	jr nz, .make
+	ld a, [wPlayerID + 1]
+	ld b, a
+	ld a, [sMacroSeed + 1]
+	cp b
+	jr z, .done
+.make
+	call ProcWorldGen
+	ld a, [wPlayerID]
+	ld [sMacroSeed], a
+	ld a, [wPlayerID + 1]
+	ld [sMacroSeed + 1], a
+	ld a, $a7
+	ld [sMacroMagic], a
+.done
+	jp CloseSRAM
+
+ProcWorldGen:
+; height at every 8th block (32 x 29 points): noise plus an island-shaped mask
+	ld hl, sMacroMap
+	ld a, l
+	ld [V_PL], a
+	ld a, h
+	ld [V_PH], a
+	xor a
+	ld [V_J], a
+.row
+	xor a
+	ld [V_I], a
+.col
+	ld a, [V_I]
+	cp 3
+	jp c, .edge
+	cp 29
+	jp nc, .edge
+	ld a, [V_J]
+	cp 3
+	jp c, .edge
+	cp 26
+	jp nc, .edge
+	ld a, [V_I]
+	add a
+	add a
+	add a
+	add 4
+	ld [wSaltScratch + PS_QU], a
+	ld a, [V_J]
+	add a
+	add a
+	add a
+	add 4
+	ld [wSaltScratch + PS_QV], a
+; three octaves of noise
+	ld a, 6
+	ld [PX_NSH], a
+	ld a, $30
+	ld [PX_NSALT], a
+	call ProcNoise
+	srl a
+	ld [V_T], a
+	ld a, 5
+	ld [PX_NSH], a
+	ld a, $31
+	ld [PX_NSALT], a
+	call ProcNoise
+	srl a
+	srl a
+	ld hl, V_T
+	add [hl]
+	ld [hl], a
+	ld a, 4
+	ld [PX_NSH], a
+	ld a, $32
+	ld [PX_NSALT], a
+	call ProcNoise
+	srl a
+	srl a
+	ld hl, V_T
+	add [hl]
+	ld [hl], a
+; island mask: 255 - 2 * distance to the centre
+	ld a, [wSaltScratch + PS_QV]
+	ld c, a
+	ld a, [wSaltScratch + PS_QU]
+	call ProcIsleDist
+	ld c, a
+	srl a
+	add c ; 1.5 * distance
+	jr c, .nomask
+	cpl
+	jr .mask
+.nomask
+	xor a
+.mask
+; h = 5/8 noise + 3/8 mask
+	ld c, a
+	srl a
+	srl a
+	ld b, a
+	ld a, c
+	srl a
+	srl a
+	srl a
+	add b
+	ld b, a
+	ld a, [V_T]
+	ld c, a
+	srl a
+	ld d, a
+	ld a, c
+	srl a
+	srl a
+	srl a
+	add d
+	add b
+	jr .store
+.edge
+	xor a
+.store
+	ld hl, V_PL
+	ld c, [hl]
+	inc hl
+	ld b, [hl]
+	ld h, b
+	ld l, c
+	ld [hli], a
+	ld a, l
+	ld [V_PL], a
+	ld a, h
+	ld [V_PH], a
+	ld a, [V_I]
+	inc a
+	ld [V_I], a
+	cp 32
+	jp nz, .col
+	ld a, [V_J]
+	inc a
+	ld [V_J], a
+	cp 29
+	jp nz, .row
+	ret
+
+ProcMul8:
+; a = x, c = f (0..7); returns a = x * f / 8
+	ld e, a
+	ld d, 0
+	ld hl, 0
+	bit 0, c
+	jr z, .b1
+	add hl, de
+.b1
+	sla e
+	rl d
+	bit 1, c
+	jr z, .b2
+	add hl, de
+.b2
+	sla e
+	rl d
+	bit 2, c
+	jr z, .b3
+	add hl, de
+.b3
+	srl h
+	rr l
+	srl h
+	rr l
+	srl h
+	rr l
+	ld a, l
+	ret
+
+ProcMix:
+; b = p, a = q, c = f (0..7); returns a = p + (q - p) * f / 8
+	cp b
+	jr c, .down
+	sub b
+	push bc
+	call ProcMul8
+	pop bc
+	add b
+	ret
+.down
+	cpl
+	inc a
+	add b ; p - q
+	push bc
+	call ProcMul8
+	pop bc
+	cpl
+	inc a
+	add b
+	ret
+
+ProcLand:
+; land is wherever the world map is high enough (blended between its points)
+	ld hl, wOverworldMapBlocks
+	ld a, l
+	ld [V_PL], a
+	ld a, h
+	ld [V_PH], a
+	xor a
+	ld [V_I], a
+.row
+	ld a, [wSaltScratch + PS_V0]
+	ld b, a
+	ld a, [V_I]
+	add b
+	cp 4
+	jp c, .next_row
+	sub 4
+	ld b, a
+	and 7
+	ld [V_T], a
+	ld a, b
+	srl a
+	srl a
+	srl a
+	cp 28
+	jp nc, .next_row
+	ld [V_J], a
+; the row of points blended vertically
+	ld l, a
+	ld h, 0
+	add hl, hl
+	add hl, hl
+	add hl, hl
+	add hl, hl
+	add hl, hl
+	ld de, sMacroMap
+	add hl, de
+	ld de, PX_BT
+	ld b, 32
+.vert
+	push bc
+	push hl
+	push de
+	ld a, [hl]
+	ld b, a
+	ld de, 32
+	add hl, de
+	ld a, [hl]
+	ld a, [V_T]
+	ld c, a
+	ld a, [hl]
+	call ProcMix
+	pop de
+	ld [de], a
+	inc de
+	pop hl
+	inc hl
+	pop bc
+	dec b
+	jr nz, .vert
+	xor a
+	ld [V_C], a
+.col
+	ld a, [wSaltScratch + PS_U0]
+	ld b, a
+	ld a, [V_C]
+	add b
+	cp 4
+	jp c, .skip
+	sub 4
+	ld b, a
+	and 7
+	ld [V_FX], a
+	ld a, b
+	srl a
+	srl a
+	srl a
+	ld e, a
+	ld d, 0
+	ld hl, PX_BT
+	add hl, de
+	ld a, [hli]
+	ld b, a
+	ld d, [hl]
+	ld a, [V_FX]
+	ld c, a
+	ld a, d
+	call ProcMix
+	ld [V_H], a
+; a little roughness from the permutation table
+	ld a, [wSaltScratch + PS_U0]
+	ld b, a
+	ld a, [V_C]
+	add b
+	ld e, a
+	ld d, 0
+	ld hl, ProcPerm
+	add hl, de
+	ld a, [hl]
+	ld b, a
+	ld a, [wSaltScratch + PS_V0]
+	ld c, a
+	ld a, [V_I]
+	add c
+	add b
+	ld e, a
+	ld d, 0
+	ld hl, ProcPerm
+	add hl, de
+	ld a, [hl]
+	and 3
+	ld hl, V_H
+	add [hl]
+	jr c, .land
+	cp PROC_SEA_LEVEL + 2
+	jr c, .skip
+.land
+	ld hl, V_PL
+	ld a, [hli]
+	ld h, [hl]
+	ld l, a
+	ld a, [V_C]
+	ld e, a
+	ld d, 0
+	add hl, de
+	ld [hl], PROC_GRASS
+.skip
+	ld a, [V_C]
+	inc a
+	ld [V_C], a
+	cp PROC_STRIDE
+	jp nz, .col
+.next_row
+	ld a, [V_PL]
+	ld l, a
+	ld a, [V_PH]
+	ld h, a
+	ld de, PROC_STRIDE
+	add hl, de
+	ld a, l
+	ld [V_PL], a
+	ld a, h
+	ld [V_PH], a
+	ld a, [V_I]
+	inc a
+	ld [V_I], a
+	cp PROC_ROWS
+	jp nz, .row
+	ret
 
 ProcHome:
 ; a clearing with the trailhead at the start chunk
@@ -347,42 +712,38 @@ ProcBiomeAt:
 	xor a
 	ret
 .terrain
-; elevation = a bit of noise + height of the island (high in the middle)
-	ld a, 5
-	ld [PX_NSH], a
-	ld a, $10
-	ld [PX_NSALT], a
-	call ProcNoise
-	srl a
-	srl a
-	ld [PX_ELEV], a
+; elevation: the height of the world map under this square
 	ld a, [wSaltScratch + PS_QV]
-	ld c, a
+	srl a
+	srl a
+	srl a
+	ld l, a
+	ld h, 0
+	add hl, hl
+	add hl, hl
+	add hl, hl
+	add hl, hl
+	add hl, hl
 	ld a, [wSaltScratch + PS_QU]
-	call ProcIsleDist
-	add a
-	jr c, .lowland
-	cpl
-	jr .have_cent
-.lowland
-	xor a
-.have_cent
-	ld c, a
 	srl a
 	srl a
-	ld b, a
-	ld a, c
-	sub b ; * 3 / 4
-	ld hl, PX_ELEV
-	add [hl]
+	srl a
+	add l
+	ld l, a
+	jr nc, .hgt
+	inc h
+.hgt
+	ld de, sMacroMap
+	add hl, de
+	ld a, [hl]
 	ld c, 0
-	cp 75
+	cp 145
 	jr c, .e_done
 	inc c
-	cp 110
+	cp 160
 	jr c, .e_done
 	inc c
-	cp 150
+	cp 175
 	jr c, .e_done
 	inc c
 .e_done

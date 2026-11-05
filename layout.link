@@ -364,6 +364,7 @@ SRAM $00
 	"Scratch"
 	org $a600
 	"SRAM Bank 0"
+	"Macro Map"
 	org $b200
 	"Backup Save"
 SRAM $01
