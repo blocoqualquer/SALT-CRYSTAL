@@ -180,6 +180,7 @@ ProcGenMap::
 	jr nz, .layer
 
 	call ProcZoneRoads
+	call ProcZoneGates
 	call ProcHome
 	call ProcRim
 	jp CloseSRAM
@@ -194,6 +195,9 @@ DEF V_C  EQUS "(PX_BT + 37)"
 DEF V_FX EQUS "(PX_BT + 38)"
 DEF V_H  EQUS "(PX_BT + 39)"
 DEF V_IC EQUS "(PX_BT + 40)"
+DEF V_BLK EQUS "(PX_BT + 41)"
+DEF V_V EQUS "(PX_BT + 42)"
+DEF V_N EQUS "(PX_BT + 43)"
 DEF PROC_SEA_LEVEL EQU 128
 
 ProcWorldEnsure:
@@ -1960,6 +1964,193 @@ ProcZoneRoads:
 	jp nz, .zrow
 	ret
 
+ProcZoneGates:
+; where a route passes from one kind of zone to another, a gateway: walls on both
+; sides of the path (trees into woods and swamps, rocks into the rest); caves get a mouth
+	ld a, [wSaltScratch + PS_U0]
+	srl a
+	srl a
+	srl a
+	ld [V_FX], a
+	ld a, [wSaltScratch + PS_V0]
+	srl a
+	srl a
+	srl a
+	ld [V_H], a
+	xor a
+	ld [V_J], a
+.grow
+	xor a
+	ld [V_T], a
+.gcol
+	ld a, [V_FX]
+	ld hl, V_T
+	add [hl]
+	ld [V_C], a
+	ld a, [V_H]
+	ld hl, V_J
+	add [hl]
+	ld [V_IC], a
+	ld a, [V_C]
+	ld b, a
+	ld a, [V_IC]
+	ld c, a
+	call ZoneAt
+	ld [V_V], a
+	cp 15
+	jp z, .cave
+	and 8
+	jp z, .gnext
+	ld a, [V_V]
+	and 7
+	cp 1
+	jp c, .gnext
+	cp 7
+	jp nc, .gnext
+; east neighbour
+	ld a, [V_C]
+	inc a
+	ld b, a
+	ld a, [V_IC]
+	ld c, a
+	call ZoneAt
+	ld [V_N], a
+	call ZGateBlock
+	or a
+	jr z, .no_e
+	ld [V_BLK], a
+	ld a, [V_C]
+	call ZW8
+	add 7
+	ld b, a
+	ld a, [V_IC]
+	call ZW8
+	ld c, a
+	ld d, 2
+	ld e, 3
+	call ZWRectB
+	ld a, [V_C]
+	call ZW8
+	add 7
+	ld b, a
+	ld a, [V_IC]
+	call ZW8
+	add 5
+	ld c, a
+	ld d, 2
+	ld e, 3
+	call ZWRectB
+.no_e
+; south neighbour
+	ld a, [V_C]
+	ld b, a
+	ld a, [V_IC]
+	inc a
+	ld c, a
+	call ZoneAt
+	ld [V_N], a
+	call ZGateBlock
+	or a
+	jp z, .gnext
+	ld [V_BLK], a
+	ld a, [V_C]
+	call ZW8
+	ld b, a
+	ld a, [V_IC]
+	call ZW8
+	add 7
+	ld c, a
+	ld d, 3
+	ld e, 2
+	call ZWRectB
+	ld a, [V_C]
+	call ZW8
+	add 5
+	ld b, a
+	ld a, [V_IC]
+	call ZW8
+	add 7
+	ld c, a
+	ld d, 3
+	ld e, 2
+	call ZWRectB
+	jp .gnext
+.cave
+; a cave mouth beside the path, flanked by rock
+	ld a, PROC_ROCK
+	ld [V_BLK], a
+	ld a, [V_C]
+	call ZW8
+	add 2
+	ld b, a
+	ld a, [V_IC]
+	call ZW8
+	add 2
+	ld c, a
+	ld d, 3
+	ld e, 1
+	call ZWRectB
+	ld a, $73
+	ld [V_BLK], a
+	ld a, [V_C]
+	call ZW8
+	add 3
+	ld b, a
+	ld a, [V_IC]
+	call ZW8
+	add 2
+	ld c, a
+	ld d, 1
+	ld e, 1
+	call ZWRectB
+.gnext
+	ld a, [V_T]
+	inc a
+	ld [V_T], a
+	cp 6
+	jp nz, .gcol
+	ld a, [V_J]
+	inc a
+	ld [V_J], a
+	cp 5
+	jp nz, .grow
+	ret
+
+ZGateBlock:
+; V_V = this cell, V_N = the neighbour; returns a = wall block for a gateway, 0 for none
+	ld a, [V_N]
+	ld b, a
+	and 8
+	ret z
+	ld a, b
+	and 7
+	ld b, a
+	cp 1
+	jr c, .none
+	cp 7
+	jr nc, .none
+	ld a, [V_V]
+	and 7
+	ld c, a
+	cp b
+	jr z, .none
+	cp 1
+	jr nz, .kind
+	ld a, b
+.kind
+	cp 2
+	jr z, .tree
+	cp 5
+	jr z, .tree
+	ld a, PROC_ROCK
+	ret
+.tree
+	ld a, PROC_TREE
+	ret
+.none
+	xor a
+	ret
+
 ZW8:
 ; a = cell number; returns a = first world block of the cell
 	add a
@@ -1969,6 +2160,9 @@ ZW8:
 
 ZWRect:
 ; path blocks over a rectangle in world blocks: b = u, c = v, d = width, e = height (clipped to the buffer)
+	ld a, PROC_PATH
+	ld [V_BLK], a
+ZWRectB:
 	ld a, [wSaltScratch + PS_U0]
 	ld l, a
 	ld a, b
@@ -2019,7 +2213,7 @@ ZWRect:
 	jr nc, .ydone
 	ld e, a
 .ydone
-	ld a, PROC_PATH
+	ld a, [V_BLK]
 	jp ProcFillRect
 
 ProcHome:
