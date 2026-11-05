@@ -201,7 +201,7 @@ ProcWorldEnsure:
 	ld a, BANK(sMacroMagic)
 	call OpenSRAM
 	ld a, [sMacroMagic]
-	cp $a9
+	cp $aa
 	jr nz, .make
 	ld a, [wPlayerID]
 	ld b, a
@@ -220,7 +220,7 @@ ProcWorldEnsure:
 	ld [sMacroSeed], a
 	ld a, [wPlayerID + 1]
 	ld [sMacroSeed + 1], a
-	ld a, $a9
+	ld a, $aa
 	ld [sMacroMagic], a
 .done
 	jp CloseSRAM
@@ -583,35 +583,35 @@ ProcLand:
 
 DEF ZB    EQUS "(wOverworldMapBlocks)"
 DEF ZPOI  EQUS "(wOverworldMapBlocks + 930)"
-DEF ZEDG  EQUS "(wOverworldMapBlocks + 964)"
-DEF ZV_N    EQUS "(wOverworldMapBlocks + 1010)"
-DEF ZV_E    EQUS "(wOverworldMapBlocks + 1011)"
-DEF ZV_S    EQUS "(wOverworldMapBlocks + 1012)" ; dw
-DEF ZV_T    EQUS "(wOverworldMapBlocks + 1014)" ; dw
-DEF ZV_HEAD EQUS "(wOverworldMapBlocks + 1016)"
-DEF ZV_TAIL EQUS "(wOverworldMapBlocks + 1017)"
-DEF ZV_CUR  EQUS "(wOverworldMapBlocks + 1018)" ; dw
-DEF ZV_ROT  EQUS "(wOverworldMapBlocks + 1020)"
-DEF ZV_K    EQUS "(wOverworldMapBlocks + 1021)"
-DEF ZV_SEG  EQUS "(wOverworldMapBlocks + 1022)"
-DEF ZV_KIND EQUS "(wOverworldMapBlocks + 1023)"
-DEF ZV_RAD  EQUS "(wOverworldMapBlocks + 1024)"
-DEF ZV_CAVE EQUS "(wOverworldMapBlocks + 1025)"
-DEF ZV_TMP  EQUS "(wOverworldMapBlocks + 1026)"
-DEF ZV_I    EQUS "(wOverworldMapBlocks + 1027)"
-DEF ZV_J    EQUS "(wOverworldMapBlocks + 1028)"
-DEF ZV_DX   EQUS "(wOverworldMapBlocks + 1029)"
-DEF ZV_DY   EQUS "(wOverworldMapBlocks + 1030)"
-DEF ZV_TI   EQUS "(wOverworldMapBlocks + 1031)"
-DEF ZV_TJ   EQUS "(wOverworldMapBlocks + 1032)"
-DEF ZV_A    EQUS "(wOverworldMapBlocks + 1033)"
-DEF ZV_B    EQUS "(wOverworldMapBlocks + 1034)"
-DEF ZV_BEST EQUS "(wOverworldMapBlocks + 1035)"
-DEF ZV_BA   EQUS "(wOverworldMapBlocks + 1036)"
-DEF ZV_BB   EQUS "(wOverworldMapBlocks + 1037)"
-DEF ZV_WANT EQUS "(wOverworldMapBlocks + 1038)"
-DEF ZV_TRY  EQUS "(wOverworldMapBlocks + 1039)"
-DEF ZV_IN   EQUS "(wOverworldMapBlocks + 1040)" ; 16 bytes
+DEF ZEDG  EQUS "(wOverworldMapBlocks + 972)"
+DEF ZV_N    EQUS "(wOverworldMapBlocks + 1022)"
+DEF ZV_E    EQUS "(wOverworldMapBlocks + 1023)"
+DEF ZV_S    EQUS "(wOverworldMapBlocks + 1024)" ; dw
+DEF ZV_T    EQUS "(wOverworldMapBlocks + 1026)" ; dw
+DEF ZV_HEAD EQUS "(wOverworldMapBlocks + 1028)"
+DEF ZV_TAIL EQUS "(wOverworldMapBlocks + 1029)"
+DEF ZV_CUR  EQUS "(wOverworldMapBlocks + 1030)" ; dw
+DEF ZV_ROT  EQUS "(wOverworldMapBlocks + 1032)"
+DEF ZV_K    EQUS "(wOverworldMapBlocks + 1033)"
+DEF ZV_SEG  EQUS "(wOverworldMapBlocks + 1034)"
+DEF ZV_KIND EQUS "(wOverworldMapBlocks + 1035)"
+DEF ZV_RAD  EQUS "(wOverworldMapBlocks + 1036)"
+DEF ZV_CAVE EQUS "(wOverworldMapBlocks + 1037)"
+DEF ZV_TMP  EQUS "(wOverworldMapBlocks + 1038)"
+DEF ZV_I    EQUS "(wOverworldMapBlocks + 1039)"
+DEF ZV_J    EQUS "(wOverworldMapBlocks + 1040)"
+DEF ZV_DX   EQUS "(wOverworldMapBlocks + 1041)"
+DEF ZV_DY   EQUS "(wOverworldMapBlocks + 1042)"
+DEF ZV_TI   EQUS "(wOverworldMapBlocks + 1043)"
+DEF ZV_TJ   EQUS "(wOverworldMapBlocks + 1044)"
+DEF ZV_A    EQUS "(wOverworldMapBlocks + 1045)"
+DEF ZV_B    EQUS "(wOverworldMapBlocks + 1046)"
+DEF ZV_BEST EQUS "(wOverworldMapBlocks + 1047)"
+DEF ZV_BA   EQUS "(wOverworldMapBlocks + 1048)"
+DEF ZV_BB   EQUS "(wOverworldMapBlocks + 1049)"
+DEF ZV_WANT EQUS "(wOverworldMapBlocks + 1050)"
+DEF ZV_TRY  EQUS "(wOverworldMapBlocks + 1051)"
+DEF ZV_IN   EQUS "(wOverworldMapBlocks + 1052)" ; 16 bytes
 DEF ZQUEUE  EQUS "(sScratch + 928)"
 DEF Z_LAND  EQU 132
 
@@ -625,7 +625,7 @@ ProcZoneGen:
 	xor a
 	call ByteFill
 	ld hl, ZV_N
-	ld bc, 64
+	ld bc, 80
 	xor a
 	call ByteFill
 ; the start is the cell under the trailhead
@@ -915,12 +915,14 @@ ZPois:
 	ld [hl], a
 	ld a, 1
 	ld [ZV_N], a
-	ld b, 4
+	ld b, 5
 	call ProcRandMod
-	add 11
+	add 16
 	ld [ZV_WANT], a
 	ld a, 255
 	ld [ZV_TRY], a
+	ld a, 5
+	ld [ZV_B], a
 .try
 	ld b, 32
 	call ProcRandMod
@@ -994,7 +996,7 @@ ZPois:
 	inc a
 .fb
 	add b
-	cp 6
+	cp 5
 	jp c, .next
 	ld a, [ZV_K]
 	dec a
@@ -1023,7 +1025,13 @@ ZPois:
 	dec a
 	ld [ZV_TRY], a
 	jp nz, .try
-	ret
+	ld a, [ZV_B]
+	dec a
+	ld [ZV_B], a
+	ret z
+	ld a, 255
+	ld [ZV_TRY], a
+	jp .try
 
 ZReach:
 ; b = i, c = j; zero flag when the cell was not reached
@@ -1040,7 +1048,7 @@ ZEdges:
 	cp 2
 	ret c
 	ld hl, ZV_IN
-	ld bc, 16
+	ld bc, 20
 	xor a
 	call ByteFill
 	ld a, 1
@@ -1121,11 +1129,11 @@ ZEdges:
 	ld [ZV_K], a
 	jp nz, .grow
 ; extra links between points that are not far apart
-	ld a, 12
+	ld a, 24
 	ld [ZV_K], a
 .extra
 	ld a, [ZV_E]
-	cp 17
+	cp 23
 	ret nc
 	ld a, [ZV_N]
 	ld b, a
@@ -1393,16 +1401,19 @@ ZPickKind:
 .rad
 	ld a, [ZV_KIND]
 	cp 1
-	ld a, 0
-	jr z, .rset
+	jr nz, .wide
+	ld b, 2
+	call ProcRandMod
+	jr .rset
+.wide
 	ld b, 2
 	call ProcRandMod
 	inc a
 .rset
 	ld [ZV_RAD], a
-	ld b, 8
+	ld b, 11
 	call ProcRandMod
-	add 3
+	add 4
 	ld [ZV_SEG], a
 	ret
 
