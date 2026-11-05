@@ -61,6 +61,7 @@ SECTION "Macro Map", SRAM
 sMacroMagic:: db
 sMacroSeed:: dw
 sMacroMap:: ds 32 * 29
+sZone:: ds 32 * 29 / 2
 
 
 SECTION "Backup Save", SRAM

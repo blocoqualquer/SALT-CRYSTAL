@@ -110,6 +110,7 @@ DEF PX_BKV EQUS "(wOverworldMapBlocks + 1282)"
 DEF PX_BKB EQUS "(wOverworldMapBlocks + 1283)"
 DEF PX_PB EQUS "(wOverworldMapBlocks + 1284)"
 DEF PX_PE EQUS "(wOverworldMapBlocks + 1285)"
+DEF PX_ZBASE EQUS "(wOverworldMapBlocks + 1299)"
 DEF PX_C3 EQUS "(wOverworldMapBlocks + 1278)"
 DEF PX_C1 EQUS "(wOverworldMapBlocks + 1272)"
 DEF PX_C2 EQUS "(wOverworldMapBlocks + 1275)"
@@ -154,14 +155,15 @@ ProcGenMap::
 
 
 ; everything is sea to begin with; the island is built from land blobs
+	call ProcWorldEnsure
 	ld hl, wOverworldMapBlocks
 	ld bc, PROC_STRIDE * PROC_ROWS
 	ld a, PROC_WATER
 	call ByteFill
-	call ProcWorldEnsure
 	ld a, BANK(sMacroMap)
 	call OpenSRAM
 	call ProcLand
+	call ProcZones
 	ld hl, PX_BT
 	ld bc, 64
 	ld a, $ff
@@ -177,8 +179,7 @@ ProcGenMap::
 	cp 3
 	jr nz, .layer
 
-	call ProcRidges
-	call ProcRoads
+	call ProcZoneRoads
 	call ProcHome
 	call ProcRim
 	jp CloseSRAM
@@ -200,7 +201,7 @@ ProcWorldEnsure:
 	ld a, BANK(sMacroMagic)
 	call OpenSRAM
 	ld a, [sMacroMagic]
-	cp $a7
+	cp $a9
 	jr nz, .make
 	ld a, [wPlayerID]
 	ld b, a
@@ -214,11 +215,12 @@ ProcWorldEnsure:
 	jr z, .done
 .make
 	call ProcWorldGen
+	call ProcZoneGen
 	ld a, [wPlayerID]
 	ld [sMacroSeed], a
 	ld a, [wPlayerID + 1]
 	ld [sMacroSeed + 1], a
-	ld a, $a7
+	ld a, $a9
 	ld [sMacroMagic], a
 .done
 	jp CloseSRAM
@@ -348,6 +350,25 @@ ProcWorldGen:
 	ld [V_J], a
 	cp 29
 	jp nz, .row
+; solid ground under the start
+	ld hl, sMacroMap + 15 * 32 + 15
+	ld b, 3
+.g_row
+	ld c, 3
+.g_col
+	ld a, [hl]
+	cp 150
+	jr nc, .g_ok
+	ld a, 150
+	ld [hl], a
+.g_ok
+	inc hl
+	dec c
+	jr nz, .g_col
+	ld de, 29
+	add hl, de
+	dec b
+	jr nz, .g_row
 	ret
 
 ProcMul8:
@@ -552,6 +573,1444 @@ ProcLand:
 	jp nz, .row
 	ret
 
+
+; ---------------------------------------------------------------------------
+; The world in zones: cities, routes and biome zones laid over the island.
+; Works on a 32 x 29 grid (one cell per point of the height map, 8 blocks).
+; Cell byte: bit 3 = route, bits 0-2 = kind (0 wall / city when on a route,
+; 1 meadow, 2 forest, 3 desert, 4 snow, 5 swamp, 6 mountain, 7 sea bay /
+; cave entrance when on a route).
+
+DEF ZB    EQUS "(wOverworldMapBlocks)"
+DEF ZPOI  EQUS "(wOverworldMapBlocks + 930)"
+DEF ZEDG  EQUS "(wOverworldMapBlocks + 964)"
+DEF ZV_N    EQUS "(wOverworldMapBlocks + 1010)"
+DEF ZV_E    EQUS "(wOverworldMapBlocks + 1011)"
+DEF ZV_S    EQUS "(wOverworldMapBlocks + 1012)" ; dw
+DEF ZV_T    EQUS "(wOverworldMapBlocks + 1014)" ; dw
+DEF ZV_HEAD EQUS "(wOverworldMapBlocks + 1016)"
+DEF ZV_TAIL EQUS "(wOverworldMapBlocks + 1017)"
+DEF ZV_CUR  EQUS "(wOverworldMapBlocks + 1018)" ; dw
+DEF ZV_ROT  EQUS "(wOverworldMapBlocks + 1020)"
+DEF ZV_K    EQUS "(wOverworldMapBlocks + 1021)"
+DEF ZV_SEG  EQUS "(wOverworldMapBlocks + 1022)"
+DEF ZV_KIND EQUS "(wOverworldMapBlocks + 1023)"
+DEF ZV_RAD  EQUS "(wOverworldMapBlocks + 1024)"
+DEF ZV_CAVE EQUS "(wOverworldMapBlocks + 1025)"
+DEF ZV_TMP  EQUS "(wOverworldMapBlocks + 1026)"
+DEF ZV_I    EQUS "(wOverworldMapBlocks + 1027)"
+DEF ZV_J    EQUS "(wOverworldMapBlocks + 1028)"
+DEF ZV_DX   EQUS "(wOverworldMapBlocks + 1029)"
+DEF ZV_DY   EQUS "(wOverworldMapBlocks + 1030)"
+DEF ZV_TI   EQUS "(wOverworldMapBlocks + 1031)"
+DEF ZV_TJ   EQUS "(wOverworldMapBlocks + 1032)"
+DEF ZV_A    EQUS "(wOverworldMapBlocks + 1033)"
+DEF ZV_B    EQUS "(wOverworldMapBlocks + 1034)"
+DEF ZV_BEST EQUS "(wOverworldMapBlocks + 1035)"
+DEF ZV_BA   EQUS "(wOverworldMapBlocks + 1036)"
+DEF ZV_BB   EQUS "(wOverworldMapBlocks + 1037)"
+DEF ZV_WANT EQUS "(wOverworldMapBlocks + 1038)"
+DEF ZV_TRY  EQUS "(wOverworldMapBlocks + 1039)"
+DEF ZV_IN   EQUS "(wOverworldMapBlocks + 1040)" ; 16 bytes
+DEF ZQUEUE  EQUS "(sScratch + 928)"
+DEF Z_LAND  EQU 132
+
+ProcZoneGen:
+	ld b, 0
+	ld c, 0
+	ld d, $5a
+	call ProcSeed
+	ld hl, ZB
+	ld bc, 928
+	xor a
+	call ByteFill
+	ld hl, ZV_N
+	ld bc, 64
+	xor a
+	call ByteFill
+; the start is the cell under the trailhead
+	ld a, 528 % 256
+	ld [ZV_S], a
+	ld a, 528 / 256
+	ld [ZV_S + 1], a
+; everything reachable from the start
+	ld a, $ff
+	ld [ZV_T], a
+	ld [ZV_T + 1], a
+	call ZBfs
+	call ZPois
+	call ZEdges
+; lay the routes
+	xor a
+	ld [ZV_K], a
+.routes
+	ld a, [ZV_E]
+	ld b, a
+	ld a, [ZV_K]
+	cp b
+	jr z, .routes_done
+	add a
+	ld e, a
+	ld d, 0
+	ld hl, ZEDG
+	add hl, de
+	ld a, [hli]
+	ld [ZV_A], a
+	ld a, [hl]
+	ld [ZV_B], a
+	ld a, [ZV_A]
+	call ZPoiIdx
+	ld a, l
+	ld [ZV_S], a
+	ld a, h
+	ld [ZV_S + 1], a
+	ld a, [ZV_B]
+	call ZPoiIdx
+	ld a, l
+	ld [ZV_T], a
+	ld a, h
+	ld [ZV_T + 1], a
+	call ZBfs
+	jr nc, .route_next
+	call ZWalk
+.route_next
+	ld a, [ZV_K]
+	inc a
+	ld [ZV_K], a
+	jr .routes
+.routes_done
+	call ZCities
+	call ZBays
+; pack the cells into nibbles
+	ld hl, ZB
+	ld de, sZone
+	ld bc, 464
+.pack
+	ld a, [hli]
+	ld [ZV_TMP], a
+	ld a, [hli]
+	swap a
+	push hl
+	ld hl, ZV_TMP
+	or [hl]
+	pop hl
+	ld [de], a
+	inc de
+	dec bc
+	ld a, b
+	or c
+	jr nz, .pack
+	ret
+
+ZIdx:
+; b = i, c = j; returns hl = j * 32 + i
+	ld l, c
+	ld h, 0
+	add hl, hl
+	add hl, hl
+	add hl, hl
+	add hl, hl
+	add hl, hl
+	ld a, b
+	or l
+	ld l, a
+	ret
+
+ZRowOf:
+; de = cell index; returns a = j (clobbers l)
+	ld a, d
+	add a
+	add a
+	add a
+	ld l, a
+	ld a, e
+	swap a
+	srl a
+	and 7
+	or l
+	ret
+
+ZPoiIdx:
+; a = POI number; returns hl = its cell index
+	add a
+	ld e, a
+	ld d, 0
+	ld hl, ZPOI
+	add hl, de
+	ld a, [hli]
+	ld b, a
+	ld c, [hl]
+	jr ZIdx
+
+ZDelta:
+	dw 1, -1, 32, -32
+
+ZPush:
+; de = cell index
+	ld a, [ZV_TAIL]
+	ld l, a
+	ld h, 0
+	add hl, hl
+	ld bc, ZQUEUE
+	add hl, bc
+	ld [hl], e
+	inc hl
+	ld [hl], d
+	ld a, [ZV_TAIL]
+	inc a
+	ld [ZV_TAIL], a
+	ret
+
+ZBfs:
+; breadth first search over land from ZV_S to ZV_T (or everywhere when ZV_T = $ffff);
+; leaves in sScratch how each cell was reached; carry when the target was found
+	ld hl, sScratch
+	ld bc, 928
+	xor a
+	call ByteFill
+	xor a
+	ld [ZV_HEAD], a
+	ld [ZV_TAIL], a
+	ld a, [ZV_S]
+	ld e, a
+	ld a, [ZV_S + 1]
+	ld d, a
+	ld hl, sScratch
+	add hl, de
+	ld [hl], 5
+	call ZPush
+.loop
+	ld a, [ZV_HEAD]
+	ld b, a
+	ld a, [ZV_TAIL]
+	cp b
+	jp z, .none
+	ld a, b
+	ld l, a
+	ld h, 0
+	add hl, hl
+	ld bc, ZQUEUE
+	add hl, bc
+	ld e, [hl]
+	inc hl
+	ld d, [hl]
+	ld a, [ZV_HEAD]
+	inc a
+	ld [ZV_HEAD], a
+	ld a, [ZV_T]
+	cp e
+	jr nz, .expand
+	ld a, [ZV_T + 1]
+	cp d
+	jr z, .found
+.expand
+	ld a, e
+	ld [ZV_CUR], a
+	ld a, d
+	ld [ZV_CUR + 1], a
+	ld b, 4
+	call ProcRandMod
+	ld [ZV_ROT], a
+	ld a, 4
+	ld [ZV_TMP + 20], a
+.dirs
+	ld a, [ZV_ROT]
+	and 3
+	ld b, a
+	call ZNeighbor
+	ld a, [ZV_ROT]
+	inc a
+	ld [ZV_ROT], a
+	ld a, [ZV_TMP + 20]
+	dec a
+	ld [ZV_TMP + 20], a
+	jr nz, .dirs
+	jp .loop
+.found
+	scf
+	ret
+.none
+	and a
+	ret
+
+ZNeighbor:
+; b = direction (0 east, 1 west, 2 south, 3 north) from the cell in ZV_CUR
+	ld a, b
+	ld [ZV_TMP], a
+	ld a, [ZV_CUR]
+	ld e, a
+	ld a, [ZV_CUR + 1]
+	ld d, a
+	ld a, b
+	or a
+	jr z, .east
+	dec a
+	jr z, .west
+	dec a
+	jr z, .south
+	call ZRowOf
+	or a
+	ret z
+	jr .go
+.east
+	ld a, e
+	and 31
+	cp 31
+	ret z
+	jr .go
+.west
+	ld a, e
+	and 31
+	ret z
+	jr .go
+.south
+	call ZRowOf
+	cp 28
+	ret nc
+.go
+	ld a, [ZV_TMP]
+	add a
+	ld c, a
+	ld b, 0
+	ld hl, ZDelta
+	add hl, bc
+	ld a, [hli]
+	ld h, [hl]
+	ld l, a
+	add hl, de
+	ld b, h
+	ld c, l
+	ld hl, sMacroMap
+	add hl, bc
+	ld a, [hl]
+	cp Z_LAND
+	ret c
+	ld hl, sScratch
+	add hl, bc
+	ld a, [hl]
+	or a
+	ret nz
+	ld a, [ZV_TMP]
+	inc a
+	ld [hl], a
+	ld d, b
+	ld e, c
+	jp ZPush
+
+ZPois:
+; scatter the points of interest on reachable land, away from each other
+	ld a, [ZV_S]
+	ld e, a
+	ld a, [ZV_S + 1]
+	ld d, a
+	call ZRowOf
+	ld [ZV_TJ], a
+	ld a, [ZV_S]
+	and 31
+	ld [ZV_TI], a
+	ld hl, ZPOI
+	ld a, [ZV_TI]
+	ld [hli], a
+	ld a, [ZV_TJ]
+	ld [hl], a
+	ld a, 1
+	ld [ZV_N], a
+	ld b, 4
+	call ProcRandMod
+	add 11
+	ld [ZV_WANT], a
+	ld a, 255
+	ld [ZV_TRY], a
+.try
+	ld b, 32
+	call ProcRandMod
+	cp 4
+	jp c, .next
+	cp 28
+	jp nc, .next
+	ld [ZV_TI], a
+	ld b, 32
+	call ProcRandMod
+	cp 4
+	jp c, .next
+	cp 25
+	jp nc, .next
+	ld [ZV_TJ], a
+; the point and its four neighbours two cells away must be reachable
+	ld a, [ZV_TI]
+	ld b, a
+	ld a, [ZV_TJ]
+	ld c, a
+	call ZReach
+	jp z, .next
+	ld a, [ZV_TI]
+	sub 2
+	ld b, a
+	ld a, [ZV_TJ]
+	ld c, a
+	call ZReach
+	jp z, .next
+	ld a, [ZV_TI]
+	add 2
+	ld b, a
+	ld a, [ZV_TJ]
+	ld c, a
+	call ZReach
+	jp z, .next
+	ld a, [ZV_TI]
+	ld b, a
+	ld a, [ZV_TJ]
+	sub 2
+	ld c, a
+	call ZReach
+	jp z, .next
+	ld a, [ZV_TI]
+	ld b, a
+	ld a, [ZV_TJ]
+	add 2
+	ld c, a
+	call ZReach
+	jp z, .next
+; far enough from the others
+	ld a, [ZV_N]
+	ld [ZV_K], a
+	ld hl, ZPOI
+.far
+	ld a, [ZV_TI]
+	ld b, a
+	ld a, [hli]
+	sub b
+	jr nc, .fa
+	cpl
+	inc a
+.fa
+	ld b, a
+	ld a, [ZV_TJ]
+	ld c, a
+	ld a, [hli]
+	sub c
+	jr nc, .fb
+	cpl
+	inc a
+.fb
+	add b
+	cp 6
+	jp c, .next
+	ld a, [ZV_K]
+	dec a
+	ld [ZV_K], a
+	jr nz, .far
+; accept
+	ld a, [ZV_N]
+	add a
+	ld e, a
+	ld d, 0
+	ld hl, ZPOI
+	add hl, de
+	ld a, [ZV_TI]
+	ld [hli], a
+	ld a, [ZV_TJ]
+	ld [hl], a
+	ld a, [ZV_N]
+	inc a
+	ld [ZV_N], a
+	ld b, a
+	ld a, [ZV_WANT]
+	cp b
+	ret z
+.next
+	ld a, [ZV_TRY]
+	dec a
+	ld [ZV_TRY], a
+	jp nz, .try
+	ret
+
+ZReach:
+; b = i, c = j; zero flag when the cell was not reached
+	call ZIdx
+	ld de, sScratch
+	add hl, de
+	ld a, [hl]
+	or a
+	ret
+
+ZEdges:
+; a spanning tree over the points (shortest links first), then a few extra loops
+	ld a, [ZV_N]
+	cp 2
+	ret c
+	ld hl, ZV_IN
+	ld bc, 16
+	xor a
+	call ByteFill
+	ld a, 1
+	ld [ZV_IN], a
+	ld a, [ZV_N]
+	dec a
+	ld [ZV_K], a
+.grow
+	ld a, 255
+	ld [ZV_BEST], a
+	xor a
+	ld [ZV_A], a
+.ea
+	ld a, [ZV_A]
+	ld e, a
+	ld d, 0
+	ld hl, ZV_IN
+	add hl, de
+	ld a, [hl]
+	or a
+	jp z, .ea_next
+	xor a
+	ld [ZV_B], a
+.eb
+	ld a, [ZV_B]
+	ld e, a
+	ld d, 0
+	ld hl, ZV_IN
+	add hl, de
+	ld a, [hl]
+	or a
+	jp nz, .eb_next
+	ld a, [ZV_A]
+	ld b, a
+	ld a, [ZV_B]
+	ld c, a
+	call ZDist
+	ld b, a
+	ld a, [ZV_BEST]
+	cp b
+	jr c, .eb_next
+	jr z, .eb_next
+	ld a, b
+	ld [ZV_BEST], a
+	ld a, [ZV_A]
+	ld [ZV_BA], a
+	ld a, [ZV_B]
+	ld [ZV_BB], a
+.eb_next
+	ld a, [ZV_B]
+	inc a
+	ld [ZV_B], a
+	ld b, a
+	ld a, [ZV_N]
+	cp b
+	jp nz, .eb
+.ea_next
+	ld a, [ZV_A]
+	inc a
+	ld [ZV_A], a
+	ld b, a
+	ld a, [ZV_N]
+	cp b
+	jp nz, .ea
+	ld a, [ZV_BA]
+	ld b, a
+	ld a, [ZV_BB]
+	ld c, a
+	call ZAddEdge
+	ld a, [ZV_BB]
+	ld e, a
+	ld d, 0
+	ld hl, ZV_IN
+	add hl, de
+	ld [hl], 1
+	ld a, [ZV_K]
+	dec a
+	ld [ZV_K], a
+	jp nz, .grow
+; extra links between points that are not far apart
+	ld a, 12
+	ld [ZV_K], a
+.extra
+	ld a, [ZV_E]
+	cp 17
+	ret nc
+	ld a, [ZV_N]
+	ld b, a
+	call ProcRandMod
+	ld [ZV_A], a
+	ld a, [ZV_N]
+	ld b, a
+	call ProcRandMod
+	ld [ZV_B], a
+	ld b, a
+	ld a, [ZV_A]
+	cp b
+	jr z, .extra_next
+	ld c, b
+	ld b, a
+	call ZDist
+	cp 10
+	jr nc, .extra_next
+	ld a, [ZV_A]
+	ld b, a
+	ld a, [ZV_B]
+	ld c, a
+	call ZHasEdge
+	jr z, .extra_next
+	call ZAddEdge
+.extra_next
+	ld a, [ZV_K]
+	dec a
+	ld [ZV_K], a
+	jr nz, .extra
+	ret
+
+ZAddEdge:
+; b, c = point numbers
+	ld a, [ZV_E]
+	add a
+	ld e, a
+	ld d, 0
+	ld hl, ZEDG
+	add hl, de
+	ld [hl], b
+	inc hl
+	ld [hl], c
+	ld a, [ZV_E]
+	inc a
+	ld [ZV_E], a
+	ret
+
+ZHasEdge:
+; b, c = point numbers; zero flag when the link exists (either way round)
+	ld a, [ZV_E]
+	or a
+	jr z, .no
+	ld d, a
+	ld hl, ZEDG
+.l
+	ld a, [hli]
+	ld [ZV_TMP], a
+	ld e, [hl]
+	inc hl
+	cp b
+	jr nz, .rev
+	ld a, e
+	cp c
+	ret z
+.rev
+	ld a, [ZV_TMP]
+	cp c
+	jr nz, .nx
+	ld a, e
+	cp b
+	ret z
+.nx
+	dec d
+	jr nz, .l
+.no
+	or 1
+	ret
+
+ZDist:
+; b, c = point numbers; returns a = Manhattan distance between them
+	ld a, b
+	add a
+	ld e, a
+	ld d, 0
+	ld hl, ZPOI
+	add hl, de
+	ld a, [hli]
+	ld b, a
+	ld a, [hl]
+	ld [ZV_TMP], a
+	ld a, c
+	add a
+	ld e, a
+	ld d, 0
+	ld hl, ZPOI
+	add hl, de
+	ld a, [hli]
+	sub b
+	jr nc, .da
+	cpl
+	inc a
+.da
+	ld b, a
+	ld a, [ZV_TMP]
+	ld c, a
+	ld a, [hl]
+	sub c
+	jr nc, .db
+	cpl
+	inc a
+.db
+	add b
+	ret
+
+ZWalk:
+; walk back from the target to the start along the search result, laying the route
+	ld a, [ZV_T]
+	ld e, a
+	ld a, [ZV_T + 1]
+	ld d, a
+	xor a
+	ld [ZV_SEG], a
+.step
+	ld a, e
+	ld [ZV_CUR], a
+	ld a, d
+	ld [ZV_CUR + 1], a
+	ld hl, ZB
+	add hl, de
+	ld a, [hl]
+	or 8
+	ld [hl], a
+	call ZSegment
+	ld a, [ZV_CUR]
+	ld e, a
+	ld a, [ZV_CUR + 1]
+	ld d, a
+	ld hl, sScratch
+	add hl, de
+	ld a, [hl]
+	cp 5
+	ret z
+	or a
+	ret z
+	dec a
+	add a
+	ld c, a
+	ld b, 0
+	ld hl, ZDelta
+	add hl, bc
+	ld a, [hli]
+	ld h, [hl]
+	ld l, a
+	ld a, e
+	sub l
+	ld e, a
+	ld a, d
+	sbc h
+	ld d, a
+	jr .step
+
+ZSegment:
+	ld a, [ZV_SEG]
+	or a
+	call z, ZPickKind
+	ld a, [ZV_SEG]
+	dec a
+	ld [ZV_SEG], a
+	call ZPaint
+	ld a, [ZV_SEG]
+	or a
+	ret nz
+	ld a, [ZV_CAVE]
+	or a
+	ret z
+	xor a
+	ld [ZV_CAVE], a
+	ld a, [ZV_CUR]
+	ld e, a
+	ld a, [ZV_CUR + 1]
+	ld d, a
+	ld hl, ZB
+	add hl, de
+	ld [hl], 15
+	ret
+
+ZPickKind:
+	ld a, [ZV_CUR]
+	and 31
+	ld [ZV_I], a
+	ld a, [ZV_CUR]
+	ld e, a
+	ld a, [ZV_CUR + 1]
+	ld d, a
+	call ZRowOf
+	ld [ZV_J], a
+	ld hl, sMacroMap
+	add hl, de
+	ld a, [hl]
+	ld [ZV_TMP], a
+	ld a, [ZV_I]
+	add a
+	add a
+	add a
+	add 4
+	ld [wSaltScratch + PS_QU], a
+	ld a, [ZV_J]
+	add a
+	add a
+	add a
+	add 4
+	ld [wSaltScratch + PS_QV], a
+	ld a, 6
+	ld [PX_NSH], a
+	ld a, $20
+	ld [PX_NSALT], a
+	call ProcNoise
+	ld [ZV_TJ], a
+	ld a, 1
+	ld [ZV_KIND], a
+	xor a
+	ld [ZV_CAVE], a
+	ld a, [ZV_TMP]
+	cp 175
+	jr nc, .snow
+	cp 160
+	jr nc, .mount
+	cp 150
+	jr nc, .mid
+	ld a, [ZV_TJ]
+	cp 110
+	jr c, .desert
+	cp 150
+	jr nc, .swamp
+.mid
+	ld a, [ZV_TJ]
+	cp 115
+	jr c, .rad
+	ld a, 2
+	jr .set
+.snow
+	ld a, 4
+	jr .cave
+.mount
+	ld a, 6
+.cave
+	ld [ZV_KIND], a
+	ld b, 4
+	call ProcRandMod
+	or a
+	jr z, .no_cave
+	ld a, 1
+	ld [ZV_CAVE], a
+.no_cave
+	ld a, [ZV_KIND]
+	jr .set
+.desert
+	ld a, 3
+	jr .set
+.swamp
+	ld a, 5
+.set
+	ld [ZV_KIND], a
+.rad
+	ld a, [ZV_KIND]
+	cp 1
+	ld a, 0
+	jr z, .rset
+	ld b, 2
+	call ProcRandMod
+	inc a
+.rset
+	ld [ZV_RAD], a
+	ld b, 8
+	call ProcRandMod
+	add 3
+	ld [ZV_SEG], a
+	ret
+
+ZSq:
+; a = signed value (-2..2); returns a = its square
+	bit 7, a
+	jr z, .p
+	cpl
+	inc a
+.p
+	cp 2
+	ret nz
+	ld a, 4
+	ret
+
+ZPaint:
+; paint the kind of the current segment on the land around the current cell
+	ld a, [ZV_CUR]
+	and 31
+	ld [ZV_I], a
+	ld a, [ZV_CUR]
+	ld e, a
+	ld a, [ZV_CUR + 1]
+	ld d, a
+	call ZRowOf
+	ld [ZV_J], a
+	ld a, [ZV_RAD]
+	cpl
+	inc a
+	ld [ZV_DY], a
+.dy
+	ld a, [ZV_RAD]
+	cpl
+	inc a
+	ld [ZV_DX], a
+.dx
+	ld a, [ZV_DX]
+	call ZSq
+	ld b, a
+	ld a, [ZV_DY]
+	call ZSq
+	add b
+	ld b, a
+	ld a, [ZV_RAD]
+	call ZSq
+	inc a
+	cp b
+	jr c, .skip
+	ld a, [ZV_DX]
+	ld b, a
+	ld a, [ZV_I]
+	add b
+	cp 32
+	jr nc, .skip
+	ld [ZV_TI], a
+	ld a, [ZV_DY]
+	ld b, a
+	ld a, [ZV_J]
+	add b
+	cp 29
+	jr nc, .skip
+	ld c, a
+	ld a, [ZV_TI]
+	ld b, a
+	call ZIdx
+	push hl
+	ld de, sMacroMap
+	add hl, de
+	ld a, [hl]
+	pop hl
+	cp Z_LAND
+	jr c, .skip
+	ld de, ZB
+	add hl, de
+	ld a, [hl]
+	cp 15
+	jr z, .skip
+	and 8
+	ld b, a
+	ld a, [ZV_KIND]
+	or b
+	ld [hl], a
+.skip
+	ld a, [ZV_DX]
+	inc a
+	ld [ZV_DX], a
+	ld b, a
+	ld a, [ZV_RAD]
+	inc a
+	cp b
+	jr nz, .dx
+	ld a, [ZV_DY]
+	inc a
+	ld [ZV_DY], a
+	ld b, a
+	ld a, [ZV_RAD]
+	inc a
+	cp b
+	jr nz, .dy
+	ret
+
+ZCities:
+; each point of interest: a marked cell with open ground around it
+	xor a
+	ld [ZV_K], a
+.city
+	ld a, [ZV_N]
+	ld b, a
+	ld a, [ZV_K]
+	cp b
+	ret z
+	add a
+	ld e, a
+	ld d, 0
+	ld hl, ZPOI
+	add hl, de
+	ld a, [hli]
+	ld [ZV_I], a
+	ld a, [hl]
+	ld [ZV_J], a
+	ld a, $ff
+	ld [ZV_DY], a
+.cdy
+	ld a, $ff
+	ld [ZV_DX], a
+.cdx
+	ld a, [ZV_DX]
+	ld b, a
+	ld a, [ZV_I]
+	add b
+	ld [ZV_TI], a
+	ld a, [ZV_DY]
+	ld b, a
+	ld a, [ZV_J]
+	add b
+	ld c, a
+	ld a, [ZV_TI]
+	ld b, a
+	call ZIdx
+	push hl
+	ld de, sMacroMap
+	add hl, de
+	ld a, [hl]
+	pop hl
+	cp Z_LAND
+	jr c, .cskip
+	ld de, ZB
+	add hl, de
+	ld a, [ZV_DX]
+	ld b, a
+	ld a, [ZV_DY]
+	or b
+	jr nz, .around
+	ld [hl], 8
+	jr .cskip
+.around
+	ld a, [hl]
+	or a
+	jr z, .cskip
+	cp 8
+	jr z, .cskip
+	and 8
+	or 1
+	ld [hl], a
+.cskip
+	ld a, [ZV_DX]
+	inc a
+	ld [ZV_DX], a
+	cp 2
+	jr nz, .cdx
+	ld a, [ZV_DY]
+	inc a
+	ld [ZV_DY], a
+	cp 2
+	jr nz, .cdy
+	ld a, [ZV_K]
+	inc a
+	ld [ZV_K], a
+	jp .city
+
+ZBays:
+; patches of sea next to the coast
+	ld a, 24
+	ld [ZV_K], a
+	ld b, 0
+.try
+	ld b, 32
+	call ProcRandMod
+	cp 5
+	jp c, .next
+	cp 27
+	jp nc, .next
+	ld [ZV_I], a
+	ld b, 29
+	call ProcRandMod
+	cp 5
+	jp c, .next
+	cp 24
+	jp nc, .next
+	ld [ZV_J], a
+; open sea with land beside it
+	ld a, [ZV_I]
+	ld b, a
+	ld a, [ZV_J]
+	ld c, a
+	call ZIdx
+	ld de, sMacroMap
+	add hl, de
+	ld a, [hl]
+	cp Z_LAND
+	jp nc, .next
+	ld de, 3
+	add hl, de
+	ld a, [hl]
+	cp Z_LAND
+	jp nc, .paint
+	ld de, -6
+	add hl, de
+	ld a, [hl]
+	cp Z_LAND
+	jp c, .next
+.paint
+	ld a, $fe
+	ld [ZV_DY], a
+.bdy
+	ld a, $fd
+	ld [ZV_DX], a
+.bdx
+	ld a, [ZV_DX]
+	ld b, a
+	ld a, [ZV_I]
+	add b
+	cp 32
+	jr nc, .bskip
+	ld [ZV_TI], a
+	ld a, [ZV_DY]
+	ld b, a
+	ld a, [ZV_J]
+	add b
+	cp 29
+	jr nc, .bskip
+	ld c, a
+	ld a, [ZV_TI]
+	ld b, a
+	call ZIdx
+	push hl
+	ld de, sMacroMap
+	add hl, de
+	ld a, [hl]
+	pop hl
+	cp Z_LAND
+	jr nc, .bskip
+	ld de, ZB
+	add hl, de
+	ld a, [hl]
+	or a
+	jr nz, .bskip
+	ld [hl], 7
+.bskip
+	ld a, [ZV_DX]
+	inc a
+	ld [ZV_DX], a
+	cp 3
+	jr nz, .bdx
+	ld a, [ZV_DY]
+	inc a
+	ld [ZV_DY], a
+	cp 2
+	jr nz, .bdy
+.next
+	ld a, [ZV_K]
+	dec a
+	ld [ZV_K], a
+	jp nz, .try
+	ret
+
+ProcZones:
+; walls around the walkable zones, and the ground each zone is made of
+	ld hl, wOverworldMapBlocks
+	ld a, l
+	ld [V_PL], a
+	ld a, h
+	ld [V_PH], a
+	xor a
+	ld [V_I], a
+.row
+	xor a
+	ld [V_C], a
+.col
+	ld a, [V_PL]
+	ld l, a
+	ld a, [V_PH]
+	ld h, a
+	ld a, [V_C]
+	ld e, a
+	ld d, 0
+	add hl, de
+	ld a, [hl]
+	cp PROC_GRASS
+	jp nz, .skip
+; rough edges: a little shake of the position
+	ld a, [wSaltScratch + PS_U0]
+	ld b, a
+	ld a, [V_C]
+	add b
+	ld [V_FX], a
+	ld e, a
+	ld d, 0
+	ld hl, ProcPerm
+	add hl, de
+	ld a, [hl]
+	ld b, a
+	ld a, [wSaltScratch + PS_V0]
+	ld c, a
+	ld a, [V_I]
+	add c
+	ld [V_H], a
+	add b
+	ld e, a
+	ld d, 0
+	ld hl, ProcPerm
+	add hl, de
+	ld a, [hl]
+	ld [V_IC], a
+	and 3
+	ld b, a
+	ld a, [V_FX]
+	add b
+	sub 2
+	srl a
+	srl a
+	srl a
+	ld b, a
+	ld a, [V_IC]
+	srl a
+	srl a
+	and 3
+	ld c, a
+	ld a, [V_H]
+	add c
+	sub 2
+	srl a
+	srl a
+	srl a
+	ld c, a
+	call ZoneAt
+	or a
+	jr z, .wall
+	cp 7
+	jr z, .water
+	cp 3
+	jr z, .sand
+	cp 11
+	jr z, .sand
+	cp 4
+	jr z, .snow
+	cp 12
+	jr z, .snow
+	jr .skip
+.sand
+	ld a, PROC_SAND
+	jr .put
+.snow
+	ld a, PROC_SNOW
+	jr .put
+.water
+	ld a, PROC_WATER
+	jr .put
+.wall
+	ld a, [V_IC]
+	and $0f
+	ld a, PROC_TREE
+	jr nz, .put
+	ld a, PROC_ROCK
+.put
+	ld b, a
+	ld a, [V_PL]
+	ld l, a
+	ld a, [V_PH]
+	ld h, a
+	ld a, [V_C]
+	ld e, a
+	ld d, 0
+	add hl, de
+	ld [hl], b
+.skip
+	ld a, [V_C]
+	inc a
+	ld [V_C], a
+	cp PROC_STRIDE
+	jp nz, .col
+	ld a, [V_PL]
+	ld l, a
+	ld a, [V_PH]
+	ld h, a
+	ld de, PROC_STRIDE
+	add hl, de
+	ld a, l
+	ld [V_PL], a
+	ld a, h
+	ld [V_PH], a
+	ld a, [V_I]
+	inc a
+	ld [V_I], a
+	cp PROC_ROWS
+	jp nz, .row
+	ret
+
+ProcZoneRoads:
+; a dirt path through every route cell, joined to the route cells beside it
+	ld a, [wSaltScratch + PS_U0]
+	srl a
+	srl a
+	srl a
+	ld [V_FX], a ; first cell column
+	ld a, [wSaltScratch + PS_V0]
+	srl a
+	srl a
+	srl a
+	ld [V_H], a ; first cell row
+	xor a
+	ld [V_J], a
+.zrow
+	xor a
+	ld [V_T], a
+.zcol
+	ld a, [V_FX]
+	ld hl, V_T
+	add [hl]
+	ld b, a
+	ld a, [V_H]
+	ld hl, V_J
+	add [hl]
+	ld c, a
+	ld [V_IC], a ; cell row
+	ld a, b
+	ld [V_C], a ; cell column
+	call ZoneAt
+	and 8
+	jp z, .znext
+; the middle
+	ld a, [V_C]
+	call ZW8
+	add 3
+	ld b, a
+	ld a, [V_IC]
+	call ZW8
+	add 3
+	ld c, a
+	ld d, 2
+	ld e, 2
+	call ZWRect
+; north
+	ld a, [V_C]
+	ld b, a
+	ld a, [V_IC]
+	dec a
+	ld c, a
+	call ZoneAt
+	and 8
+	jr z, .no_n
+	ld a, [V_C]
+	call ZW8
+	add 3
+	ld b, a
+	ld a, [V_IC]
+	call ZW8
+	ld c, a
+	ld d, 2
+	ld e, 3
+	call ZWRect
+.no_n
+; south
+	ld a, [V_C]
+	ld b, a
+	ld a, [V_IC]
+	inc a
+	ld c, a
+	call ZoneAt
+	and 8
+	jr z, .no_s
+	ld a, [V_C]
+	call ZW8
+	add 3
+	ld b, a
+	ld a, [V_IC]
+	call ZW8
+	add 5
+	ld c, a
+	ld d, 2
+	ld e, 3
+	call ZWRect
+.no_s
+; west
+	ld a, [V_C]
+	dec a
+	ld b, a
+	ld a, [V_IC]
+	ld c, a
+	call ZoneAt
+	and 8
+	jr z, .no_w
+	ld a, [V_C]
+	call ZW8
+	ld b, a
+	ld a, [V_IC]
+	call ZW8
+	add 3
+	ld c, a
+	ld d, 3
+	ld e, 2
+	call ZWRect
+.no_w
+; east
+	ld a, [V_C]
+	inc a
+	ld b, a
+	ld a, [V_IC]
+	ld c, a
+	call ZoneAt
+	and 8
+	jr z, .znext
+	ld a, [V_C]
+	call ZW8
+	add 5
+	ld b, a
+	ld a, [V_IC]
+	call ZW8
+	add 3
+	ld c, a
+	ld d, 3
+	ld e, 2
+	call ZWRect
+.znext
+	ld a, [V_T]
+	inc a
+	ld [V_T], a
+	cp 6
+	jp nz, .zcol
+	ld a, [V_J]
+	inc a
+	ld [V_J], a
+	cp 5
+	jp nz, .zrow
+	ret
+
+ZW8:
+; a = cell number; returns a = first world block of the cell
+	add a
+	add a
+	add a
+	ret
+
+ZWRect:
+; path blocks over a rectangle in world blocks: b = u, c = v, d = width, e = height (clipped to the buffer)
+	ld a, [wSaltScratch + PS_U0]
+	ld l, a
+	ld a, b
+	sub l
+	jr nc, .xpos
+	cpl
+	inc a
+	ld l, a ; blocks cut off on the left
+	ld a, d
+	sub l
+	ret z
+	ret c
+	ld d, a
+	ld b, 0
+	jr .xdone
+.xpos
+	cp PROC_STRIDE
+	ret nc
+	ld b, a
+	ld a, PROC_STRIDE
+	sub b
+	cp d
+	jr nc, .xdone
+	ld d, a
+.xdone
+	ld a, [wSaltScratch + PS_V0]
+	ld l, a
+	ld a, c
+	sub l
+	jr nc, .ypos
+	cpl
+	inc a
+	ld l, a
+	ld a, e
+	sub l
+	ret z
+	ret c
+	ld e, a
+	ld c, 0
+	jr .ydone
+.ypos
+	cp PROC_ROWS
+	ret nc
+	ld c, a
+	ld a, PROC_ROWS
+	sub c
+	cp e
+	jr nc, .ydone
+	ld e, a
+.ydone
+	ld a, PROC_PATH
+	jp ProcFillRect
+
 ProcHome:
 ; a clearing with the trailhead at the start chunk
 	ld a, [wProcChunkX]
@@ -689,104 +2148,56 @@ ProcBiomeCoarse:
 	ld c, a
 
 ProcBiomeAt:
-; b = world u, c = world v; returns a = biome, from elevation and moisture
+; b = world u, c = world v; returns a = biome of the zone cell they are in
 	ld a, b
-	ld [wSaltScratch + PS_QU], a
+	srl a
+	srl a
+	srl a
+	ld b, a
 	ld a, c
-	ld [wSaltScratch + PS_QV], a
-; the start clearing is always meadow
-	ld a, b
-	sub PROC_HOME_U
-	jr nc, .ax
-	cpl
-	inc a
-.ax
-	cp 30
-	jr nc, .terrain
-	ld a, c
-	sub PROC_HOME_V
-	jr nc, .ay
-	cpl
-	inc a
-.ay
-	cp 26
-	jr nc, .terrain
-	xor a
-	ret
-.terrain
-; elevation: the height of the world map under this square
-	ld a, [wSaltScratch + PS_QV]
 	srl a
 	srl a
 	srl a
-	ld l, a
-	ld h, 0
-	add hl, hl
-	add hl, hl
-	add hl, hl
-	add hl, hl
-	add hl, hl
-	ld a, [wSaltScratch + PS_QU]
-	srl a
-	srl a
-	srl a
-	add l
-	ld l, a
-	jr nc, .hgt
-	inc h
-.hgt
-	ld de, sMacroMap
+	ld c, a
+	call ZoneAt
+	ld e, a
+	ld d, 0
+	ld hl, ZKindBiome
 	add hl, de
-	ld a, [hl]
-	ld c, 0
-	cp 145
-	jr c, .e_done
-	inc c
-	cp 160
-	jr c, .e_done
-	inc c
-	cp 175
-	jr c, .e_done
-	inc c
-.e_done
-	ld a, c
-	add a
-	add a
-	ld [PX_ELEV], a ; level * 4
-; moisture level 0..3
-	ld a, 6
-	ld [PX_NSH], a
-	ld a, $20
-	ld [PX_NSALT], a
-	call ProcNoise
-	ld c, 0
-	cp 94
-	jr c, .m_done
-	inc c
-	cp 117
-	jr c, .m_done
-	inc c
-	cp 153
-	jr c, .m_done
-	inc c
-.m_done
-	ld a, [PX_ELEV]
-	add c
-	ld hl, ProcBiomeTable
-	add l
-	ld l, a
-	jr nc, .t
-	inc h
-.t
 	ld a, [hl]
 	ret
 
-ProcBiomeTable:
-; rows: elevation low to high; columns: moisture dry to wet
-	db 6, 6, 8, 8 ; desert, desert, swamp, swamp (the coast)
-	db 6, 0, 4, 8 ; desert, meadow, flowers, swamp
-	db 3, 1, 1, 1 ; forest
-	db 5, 7, 7, 7 ; mountains, snow (the heart of the island)
+ZKindBiome:
+; zone cell value (route bit 3, kind bits 0-2) -> biome
+	db 0, 0, 1, 6, 7, 8, 5, 0
+	db 0, 0, 1, 6, 7, 8, 5, 5
+
+ZoneAt:
+; b = cell column, c = cell row; returns a = zone cell value (0 outside the grid)
+	ld a, b
+	cp 32
+	jr nc, .out
+	ld a, c
+	cp 29
+	jr nc, .out
+	call ZIdx
+	ld a, l
+	and 1
+	ld e, a
+	srl h
+	rr l
+	ld bc, sZone
+	add hl, bc
+	ld a, [hl]
+	bit 0, e
+	jr z, .lo
+	swap a
+.lo
+	and 15
+	ret
+.out
+	xor a
+	ret
 
 ProcNoise:
 ; smooth 2D noise 0..255 at world (PS_QU, PS_QV); PX_NSH = grid shift, PX_NSALT = salt
@@ -1148,6 +2559,18 @@ ProcCell:
 	ld a, [wSaltScratch + PS_CV]
 	ld c, a
 	call ProcBiomeCoarse
+	ld c, a
+	cp 6
+	ld a, PROC_SAND
+	jr z, .zbase
+	ld a, c
+	cp 7
+	ld a, PROC_SNOW
+	jr z, .zbase
+	ld a, PROC_GRASS
+.zbase
+	ld [PX_ZBASE], a
+	ld a, c
 ; kind thresholds for this biome
 	ld c, a
 	add a
@@ -1578,6 +3001,10 @@ ProcBlob:
 	ld a, [wSaltScratch + PS_MODE]
 	and a
 	jr z, .always
+	push af
+	ld a, [PX_ZBASE]
+	ld d, a
+	pop af
 	dec a
 	jr z, .grass_only
 ; never over water
@@ -1594,7 +3021,7 @@ ProcBlob:
 	jr .next_row
 .grass_only
 	ld a, [hl]
-	cp PROC_GRASS
+	cp d
 	jr nz, .grass_skip
 	ld [hl], e
 .grass_skip
@@ -2586,12 +4013,12 @@ ProcLayerBig:
 	db  2, 6, 6, 60, 190, 190
 	db  0, 10, 10, 40, 40, 190
 	db 40, 60, 130, 130, 130, 130
-	db PROC_WATER,  0, 3, 7, 3, 3, 7 ; lake
-	db PROC_TREE,   2, 3, 7, 3, 7, 7 ; big wood
-	db PROC_TALL,   2, 3, 7, 3, 7, 7 ; tall grass field
-	db PROC_ROCK,   2, 2, 7, 2, 7, 7 ; rocky mass
-	db PROC_SAND,   2, 3, 7, 3, 3, 7 ; dunes
-	db PROC_SNOW,   2, 4, 7, 4, 7, 7 ; snowfield
+	db PROC_WATER,  1, 3, 7, 3, 3, 7 ; lake
+	db PROC_TREE,   1, 3, 7, 3, 7, 7 ; big wood
+	db PROC_TALL,   1, 3, 7, 3, 7, 7 ; tall grass field
+	db PROC_ROCK,   1, 2, 7, 2, 7, 7 ; rocky mass
+	db PROC_SAND,   1, 3, 7, 3, 3, 7 ; dunes
+	db PROC_SNOW,   1, 4, 7, 4, 7, 7 ; snowfield
 
 ProcLayerMedium:
 	db 30, 90, 110, 110, 120, 120
