@@ -392,6 +392,8 @@ ZRowOf:
 
 ZRoute:
 ; a route from (ZV_CI, ZV_CJ) to (ZV_X1, ZV_Y1): straight legs, sometimes with a jog in the middle
+	xor a
+	ld [ZV_SEG], a
 	call ZMark
 	ld b, 2
 	call ProcRandMod
@@ -893,15 +895,6 @@ ZPickKind:
 .mount
 	ld a, 6
 .cave
-	ld [ZV_KIND], a
-	ld b, 4
-	call ProcRandMod
-	or a
-	jr z, .no_cave
-	ld a, 1
-	ld [ZV_CAVE], a
-.no_cave
-	ld a, [ZV_KIND]
 	jr .set
 .desert
 	ld a, 3
@@ -911,21 +904,9 @@ ZPickKind:
 .set
 	ld [ZV_KIND], a
 .rad
-	ld a, [ZV_KIND]
-	cp 1
-	jr nz, .wide
-	ld b, 2
-	call ProcRandMod
-	jr .rset
-.wide
-	ld b, 2
-	call ProcRandMod
-	inc a
-.rset
+	xor a
 	ld [ZV_RAD], a
-	ld b, 11
-	call ProcRandMod
-	add 4
+	ld a, 250
 	ld [ZV_SEG], a
 	ret
 
@@ -998,9 +979,11 @@ ZPaint:
 	ld de, ZB
 	add hl, de
 	ld a, [hl]
-	cp 15
-	jr z, .skip
-	and 8
+	and 7
+	jr nz, .skip
+	ld a, [hl]
+	or 7
+	xor 7
 	ld b, a
 	ld a, [ZV_KIND]
 	or b
@@ -1025,10 +1008,11 @@ ZPaint:
 	ret
 
 ZCities:
-; each point of interest: a marked cell with open ground around it
+; the points of interest: towns (a block of streets) and wild places (a clearing path
+; through a forest, a cave mouth in the rock, ...)
 	xor a
 	ld [ZV_K], a
-.city
+.node
 	ld a, [ZV_N]
 	ld b, a
 	ld a, [ZV_K]
@@ -1041,60 +1025,189 @@ ZCities:
 	add hl, de
 	ld a, [hli]
 	ld [ZV_I], a
+	ld [ZV_CI], a
 	ld a, [hl]
 	ld [ZV_J], a
-	ld a, $ff
-	ld [ZV_DY], a
-.cdy
-	ld a, $ff
-	ld [ZV_DX], a
-.cdx
-	ld a, [ZV_DX]
+	ld [ZV_CJ], a
+; kind of ground here
 	ld b, a
 	ld a, [ZV_I]
-	add b
-	ld [ZV_TI], a
-	ld a, [ZV_DY]
-	ld b, a
-	ld a, [ZV_J]
-	add b
-	ld c, a
-	ld a, [ZV_TI]
+	ld c, b
 	ld b, a
 	call ZIdx
-	ld de, ZB
-	add hl, de
+	ld a, l
+	ld [ZV_CUR], a
+	ld a, h
+	ld [ZV_CUR + 1], a
+	call ZPickKind
+	ld a, [ZV_K]
+	or a
+	jr nz, .pick
+	ld a, 1
+	ld [ZV_KIND], a
+.pick
+	ld a, [ZV_KIND]
+	ld [ZV_TMP + 3], a
+	cp 1
+	jr z, .town
+	ld b, 2
+	call ProcRandMod
+	or a
+	jp z, .wild
+.town
+; streets: every cell is a route cell
+	ld b, 2
+	call ProcRandMod
+	inc a
+	ld [ZV_RAD], a
+	call ZBlockTown
+	jp .next
+.wild
+	call ZBlockWild
+.next
+	ld a, [ZV_K]
+	inc a
+	ld [ZV_K], a
+	jp .node
+
+ZBlockTown:
+; 3 or 5 cells wide, 3 high: kind with the route bit, the middle one marked as a town
+	ld a, $ff
+	ld [ZV_DY], a
+.ty
+	ld a, [ZV_RAD]
+	cpl
+	inc a
+	ld [ZV_DX], a
+.tx
+	call ZNodeCell
+	jr c, .tskip
+	ld a, [ZV_TMP + 3]
+	or 8
+	ld b, a
+	ld a, [hl]
+	and 8
+	or b
+	ld [hl], a
 	ld a, [ZV_DX]
 	ld b, a
 	ld a, [ZV_DY]
 	or b
-	jr nz, .around
+	jr nz, .tskip
 	ld [hl], 8
-	jr .cskip
-.around
-	ld a, [hl]
-	or a
-	jr z, .cskip
-	cp 8
-	jr z, .cskip
-	and 8
-	or 1
-	ld [hl], a
-.cskip
+.tskip
 	ld a, [ZV_DX]
 	inc a
 	ld [ZV_DX], a
-	cp 2
-	jr nz, .cdx
+	ld b, a
+	ld a, [ZV_RAD]
+	inc a
+	cp b
+	jr nz, .tx
 	ld a, [ZV_DY]
 	inc a
 	ld [ZV_DY], a
 	cp 2
-	jr nz, .cdy
-	ld a, [ZV_K]
+	jr nz, .ty
+	ret
+
+ZBlockWild:
+; 3 x 3 of the zone's ground, with a cross of path through it (or a cave mouth in the middle)
+	ld a, $ff
+	ld [ZV_DY], a
+.wy
+	ld a, $ff
+	ld [ZV_DX], a
+.wx
+	call ZNodeCell
+	jr c, .wskip
+	ld a, [hl]
+	and 8
+	ld b, a
+	ld a, [ZV_TMP + 3]
+	or b
+	ld [hl], a
+; the cross: the middle and its four neighbours are route cells
+	ld a, [ZV_DX]
+	ld b, a
+	ld a, [ZV_DY]
+	ld c, a
+	or b
+	jr z, .wcross
+	ld a, b
+	or a
+	jr z, .wnear
+	ld a, c
+	or a
+	jr nz, .wskip
+.wnear
+	ld a, [hl]
+	or 8
+	ld [hl], a
+	jr .wskip
+.wcross
+	ld a, [ZV_TMP + 3]
+	cp 4
+	jr z, .wcave
+	cp 6
+	jr z, .wcave
+	or 8
+	ld [hl], a
+	jr .wskip
+.wcave
+	ld b, 4
+	push hl
+	call ProcRandMod
+	pop hl
+	or a
+	ld a, [ZV_TMP + 3]
+	jr z, .wnocave
+	ld [hl], 15
+	jr .wskip
+.wnocave
+	or 8
+	ld [hl], a
+.wskip
+	ld a, [ZV_DX]
 	inc a
-	ld [ZV_K], a
-	jp .city
+	ld [ZV_DX], a
+	cp 2
+	jr nz, .wx
+	ld a, [ZV_DY]
+	inc a
+	ld [ZV_DY], a
+	cp 2
+	jr nz, .wy
+	ret
+
+ZNodeCell:
+; the cell at (ZV_I + ZV_DX, ZV_J + ZV_DY): hl = its byte in ZB, carry set when it is outside the allowed area
+	ld a, [ZV_DX]
+	ld b, a
+	ld a, [ZV_I]
+	add b
+	cp 28
+	jr nc, .out
+	cp 2
+	jr c, .out
+	ld b, a
+	ld a, [ZV_DY]
+	ld c, a
+	ld a, [ZV_J]
+	add c
+	cp 25
+	jr nc, .out
+	cp 2
+	jr c, .out
+	ld c, a
+	call ZIdx
+	ld de, ZB
+	add hl, de
+	and a
+	ret
+.out
+	scf
+	ret
 
 ZBays:
 ; patches of sea beside a route
