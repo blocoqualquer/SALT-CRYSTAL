@@ -978,19 +978,19 @@ ZPaint:
 	ld b, a
 	ld a, [ZV_I]
 	add b
-	cp 31
+	cp 28
 	jr nc, .skip
-	or a
-	jr z, .skip
+	cp 2
+	jr c, .skip
 	ld [ZV_TI], a
 	ld a, [ZV_DY]
 	ld b, a
 	ld a, [ZV_J]
 	add b
-	cp 28
+	cp 25
 	jr nc, .skip
-	or a
-	jr z, .skip
+	cp 2
+	jr c, .skip
 	ld c, a
 	ld a, [ZV_TI]
 	ld b, a
@@ -1158,14 +1158,14 @@ ZBays:
 	ld b, a
 	ld a, [ZV_I]
 	add b
-	cp 31
+	cp 28
 	jr nc, .bskip
 	ld [ZV_TI], a
 	ld a, [ZV_DY]
 	ld b, a
 	ld a, [ZV_J]
 	add b
-	cp 28
+	cp 25
 	jr nc, .bskip
 	ld c, a
 	ld a, [ZV_TI]
