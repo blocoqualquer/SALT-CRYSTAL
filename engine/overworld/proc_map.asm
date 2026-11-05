@@ -293,12 +293,14 @@ ProcWorldGen:
 	call ProcIsleDist
 	ld c, a
 	srl a
-	add c ; 1.5 * distance
+	srl a
+	add c ; 1.25 * distance
 	jr c, .nomask
 	cpl
-	jr .mask
+	cp 44
+	jr nc, .mask
 .nomask
-	xor a
+	ld a, 44 ; never fully flat: far noise peaks become islets
 .mask
 ; h = 5/8 noise + 3/8 mask
 	ld c, a
