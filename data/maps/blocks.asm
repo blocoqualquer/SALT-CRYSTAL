@@ -1049,4 +1049,7 @@ GoldenrodDeptStoreRoof_Blocks:
 ProcTest_Blocks:
 	INCBIN "maps/ProcTest.blk"
 
+ProcCave_Blocks:
+	INCBIN "maps/ProcCave.blk"
+
 ENDSECTION

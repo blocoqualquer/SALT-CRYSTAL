@@ -3045,6 +3045,11 @@ wWeather:: db
 ; Salt Crystal: coordinates of the procedural chunk the player is in
 wProcChunkX:: db
 wProcChunkY:: db
+; where the player stands to come back from a cave: map coordinates and the entrance block in the world
+wProcRetX:: db
+wProcRetY:: db
+wProcRetU:: db
+wProcRetV:: db
 
 ; Salt Crystal: frames until the next hunger tick, and a pending warning
 wHungerFrames:: dw

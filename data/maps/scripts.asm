@@ -487,4 +487,6 @@ INCLUDE "maps/Route10North.asm"
 
 INCLUDE "maps/ProcTest.asm"
 
+INCLUDE "maps/ProcCave.asm"
+
 ENDSECTION

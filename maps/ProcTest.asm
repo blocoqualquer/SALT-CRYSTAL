@@ -16,6 +16,10 @@ ProcTestLeaveScript:
 .stay
 	end
 
+ProcDoorScript::
+	callasm ProcDoorGo
+	end
+
 ProcTest_MapEvents:
 	db 0, 0 ; filler
 

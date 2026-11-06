@@ -133,6 +133,14 @@ MACRO RForEach
 .done\@
 ENDM
 
+ProcGenAny::
+; builds the map if this is one of the procedural ones
+	ld a, [wMapNumber]
+	cp MAP_PROC_CAVE
+	jp z, ProcGenCave
+	cp MAP_PROC_TEST
+	ret nz
+
 ProcGenMap::
 	ld a, [wProcChunkX]
 	cp PROC_WORLD
@@ -1011,18 +1019,23 @@ RPassLane:
 	jp RClipFill
 
 RPassCave:
-; caves: a cave mouth between two rocks near the top of the place
+; caves: a cave mouth between two rocks above the road, with open ground in front of it
 	ld a, [G_RK]
 	cp 2
 	ret nz
 	ld a, [G_RW]
 	srl a
+	add 3
 	ld b, a
 	ld a, [G_RX]
 	add b
 	ld [G_RX], a
+	ld a, [G_RH]
+	srl a
+	ld b, a
 	ld a, [G_RY]
-	add 2
+	add b
+	sub 3
 	ld [G_RY], a
 	ld a, 1
 	ld [G_RW], a
@@ -1039,6 +1052,15 @@ RPassCave:
 	ld a, [G_RX]
 	add 2
 	ld [G_RX], a
+	call RClipFill
+	ld a, [G_RX]
+	dec a
+	ld [G_RX], a
+	ld a, [G_RY]
+	inc a
+	ld [G_RY], a
+	ld a, PROC_SAND
+	ld [G_RBLK], a
 	jp RClipFill
 
 
@@ -1243,3 +1265,299 @@ ProcRowPtr:
 	pop de
 	ret
 
+
+
+; ---------------------------------------------------------------------------
+; doors between the world and the caves
+
+DEF CAVE_W EQU 20
+DEF CAVE_H EQU 18
+DEF CAVE_STRIDE EQU CAVE_W + 6
+DEF CAVE_WALL EQU $2d
+DEF CAVE_FLOOR EQU $02
+DEF CAVE_LADDER EQU $07
+DEF CAVE_DOOR EQU $73
+
+ProcBlockUnderPlayer:
+; a = the block the player stands on; b = its column, c = its row in the buffer
+	ld a, [wXCoord]
+	srl a
+	add 3
+	ld b, a
+	ld a, [wYCoord]
+	srl a
+	add 3
+	ld c, a
+	ld a, [wMapWidth]
+	add 6
+	ld e, a
+	ld d, 0
+	ld hl, wOverworldMapBlocks
+	ld a, c
+	and a
+	jr z, .col
+.row
+	add hl, de
+	dec a
+	jr nz, .row
+.col
+	ld e, b
+	ld d, 0
+	add hl, de
+	ld a, [hl]
+	ret
+
+ProcDoorKind:
+; a = 1 on a cave mouth in the world, 2 on the ladder of a cave, else 0
+	ld a, [wMapGroup]
+	cp GROUP_PROC_TEST
+	jr nz, .none
+	ld a, [wMapNumber]
+	cp MAP_PROC_TEST
+	jr z, .world
+	cp MAP_PROC_CAVE
+	jr nz, .none
+	call ProcBlockUnderPlayer
+	cp CAVE_LADDER
+	jr nz, .none
+	ld a, 2
+	ret
+.world
+	call ProcBlockUnderPlayer
+	cp CAVE_DOOR
+	jr nz, .none
+	ld a, 1
+	ret
+.none
+	xor a
+	ret
+
+ProcDoorCheck::
+; carry when the player has stepped on a door
+	call ProcDoorKind
+	and a
+	ret z
+	scf
+	ret
+
+ProcDoorGo::
+; the warp itself
+	call ProcDoorKind
+	cp 2
+	jr z, .leave
+; into the cave: remember the way back (one block below the mouth) and the mouth's place in the world
+	ld a, [wXCoord]
+	ld [wProcRetX], a
+	ld a, [wYCoord]
+	add 2
+	ld [wProcRetY], a
+	ld a, [wProcChunkX]
+	call ProcChunkBase30
+	ld c, a
+	ld a, [wXCoord]
+	srl a
+	add 3
+	add c
+	ld [wProcRetU], a
+	ld a, [wProcChunkY]
+	call ProcChunkBase27
+	ld c, a
+	ld a, [wYCoord]
+	srl a
+	add 3
+	add c
+	ld [wProcRetV], a
+	ld a, MAP_PROC_CAVE
+	ld [wMapNumber], a
+	ld a, 20
+	ld [wXCoord], a
+	ld a, 30
+	ld [wYCoord], a
+	jr .go
+.leave
+	ld a, MAP_PROC_TEST
+	ld [wMapNumber], a
+	ld a, [wProcRetX]
+	ld [wXCoord], a
+	ld a, [wProcRetY]
+	ld [wYCoord], a
+.go
+	ld a, GROUP_PROC_TEST
+	ld [wMapGroup], a
+	ld a, SPAWN_N_A
+	ld [wDefaultSpawnpoint], a
+	ld a, MAPSETUP_WARP
+	ldh [hMapEntryMethod], a
+	ld a, MAPSTATUS_ENTER
+	call LoadMapStatus
+	ret
+
+ProcChunkBase30:
+; a = chunk * 30 + 1
+	ld c, a
+	ld a, 1
+	inc c
+	jr .start
+.add
+	add 30
+.start
+	dec c
+	jr nz, .add
+	ret
+
+ProcChunkBase27:
+	ld c, a
+	ld a, 1
+	inc c
+	jr .start
+.add
+	add 27
+.start
+	dec c
+	jr nz, .add
+	ret
+
+ProcGenCave::
+; a little cave from a drunkard's walk, seeded by the mouth it was entered from
+	ld hl, wOverworldMapBlocks
+	ld bc, CAVE_STRIDE * (CAVE_H + 6)
+	ld a, CAVE_WALL
+	call ByteFill
+	ld a, [wProcRetU]
+	ld b, a
+	ld a, [wProcRetV]
+	ld c, a
+	ld d, $c4
+	call ProcSeed
+	ld a, 10
+	ld [G_X], a
+	ld a, 15
+	ld [G_Y], a
+	ld a, 220
+	ld [G_I], a
+.step
+	call ProcCaveCarve
+	ld b, 4
+	call ProcRandMod
+	ld e, a
+	ld a, [G_X]
+	ld b, a
+	ld a, [G_Y]
+	ld c, a
+	ld a, e
+	and a
+	jr z, .left
+	dec a
+	jr z, .right
+	dec a
+	jr z, .up
+; down
+	ld a, c
+	cp 14
+	jr nc, .moved
+	inc c
+	jr .moved
+.left
+	ld a, b
+	cp 3
+	jr c, .moved
+	dec b
+	jr .moved
+.right
+	ld a, b
+	cp 16
+	jr nc, .moved
+	inc b
+	jr .moved
+.up
+	ld a, c
+	cp 3
+	jr c, .moved
+	dec c
+.moved
+	ld a, b
+	ld [G_X], a
+	ld a, c
+	ld [G_Y], a
+	ld a, [G_I]
+	dec a
+	ld [G_I], a
+	jr nz, .step
+; the ladder out, with floor in front of it
+	ld a, 10
+	ld b, 16
+	ld e, CAVE_LADDER
+	call ProcCaveSet
+	ld a, 10
+	ld b, 15
+	ld e, CAVE_FLOOR
+	call ProcCaveSet
+	ld a, 10
+	ld b, 14
+	ld e, CAVE_FLOOR
+	jp ProcCaveSet
+
+ProcCaveCarve:
+; floor on the walker's block and on a neighbour
+	ld a, [G_X]
+	ld b, a
+	ld a, [G_Y]
+	ld e, CAVE_FLOOR
+	push af
+	ld a, b
+	ld c, a
+	pop af
+	ld b, a
+	ld a, c
+	call ProcCaveSet
+	ld b, 2
+	call ProcRandMod
+	and a
+	ret z
+	ld a, [G_X]
+	inc a
+	ld b, a
+	ld a, [G_Y]
+	ld c, a
+	ld a, b
+	ld b, c
+	ld e, CAVE_FLOOR
+	cp 18
+	ret nc
+	jp ProcCaveSet
+
+ProcCaveSet:
+; a = column, b = row (0-based inside the cave), e = block
+	push de
+	ld c, b
+	ld b, a
+	ld hl, wOverworldMapBlocks
+	ld a, c
+	add 3
+	ld d, 0
+	push bc
+	ld c, CAVE_STRIDE
+	ld b, a
+	and a
+	jr z, .col
+.row
+	ld a, l
+	add c
+	ld l, a
+	jr nc, .nc
+	inc h
+.nc
+	dec b
+	jr nz, .row
+.col
+	pop bc
+	ld a, b
+	add 3
+	add l
+	ld l, a
+	jr nc, .nc2
+	inc h
+.nc2
+	pop de
+	ld [hl], e
+	ret

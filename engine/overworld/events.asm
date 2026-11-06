@@ -315,6 +315,9 @@ CheckTileEvent:
 	call CheckWarpTile
 	jr c, .warp_tile
 
+	farcall ProcDoorCheck
+	jr c, .proc_door
+
 .connections_disabled
 	call CheckCoordEventsEnabled
 	jr z, .coord_events_disabled
@@ -357,6 +360,12 @@ CheckTileEvent:
 .not_pit
 	ld a, PLAYEREVENT_WARP
 	scf
+	ret
+
+.proc_door
+	ld hl, ProcDoorScript
+	call GetMapScriptsBank
+	call CallScript
 	ret
 
 .coord_event

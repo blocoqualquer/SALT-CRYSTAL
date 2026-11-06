@@ -701,10 +701,7 @@ LoadBlockData::
 	ld a, [wMapGroup]
 	cp GROUP_PROC_TEST
 	jr nz, .not_proc
-	ld a, [wMapNumber]
-	cp MAP_PROC_TEST
-	jr nz, .not_proc
-	farcall ProcGenMap
+	farcall ProcGenAny
 .not_proc
 	ld a, MAPCALLBACK_TILES
 	call RunMapCallback

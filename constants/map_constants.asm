@@ -191,6 +191,7 @@ ENDM
 	map_const ROUTE_21,                                    10, 18 ;  7
 	map_const CINNABAR_ISLAND,                             10,  9 ;  8
 	map_const PROC_TEST,                                   30, 27 ;  9
+	map_const PROC_CAVE,                                   20, 18 ; 10
 	endgroup
 
 	newgroup CERULEAN                                             ;  7
