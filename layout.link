@@ -113,13 +113,13 @@ ROMX $24
 	"bank24"
 ROMX $25
 	"Maps"
-	"Events"
 ROMX $26
 	"Map Scripts 11"
 ROMX $27
 	"Map Scripts 12"
 ROMX $28
 	"Phone Scripts 1"
+	"Events"
 ROMX $29
 	"Phone Text"
 ROMX $2a

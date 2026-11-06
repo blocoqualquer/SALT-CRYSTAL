@@ -1052,4 +1052,7 @@ ProcTest_Blocks:
 ProcCave_Blocks:
 	INCBIN "maps/ProcCave.blk"
 
+ProcForest_Blocks:
+	INCBIN "maps/ProcForest.blk"
+
 ENDSECTION

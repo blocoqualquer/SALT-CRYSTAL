@@ -524,6 +524,8 @@ ENDM
 
 	map_attributes ProcCave, PROC_CAVE, $00
 
+	map_attributes ProcForest, PROC_FOREST, $05
+
 	map_attributes CinnabarPokecenter1F, CINNABAR_POKECENTER_1F, $00
 	map_attributes CinnabarPokecenter2FBeta, CINNABAR_POKECENTER_2F_BETA, $00
 	map_attributes Route19FuchsiaGate, ROUTE_19_FUCHSIA_GATE, $00

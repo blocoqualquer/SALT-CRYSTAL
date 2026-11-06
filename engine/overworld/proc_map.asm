@@ -99,6 +99,16 @@ DEF G_QX EQUS "(wOverworldMapBlocks + 1243)"
 DEF G_QY EQUS "(wOverworldMapBlocks + 1244)"
 DEF G_QW EQUS "(wOverworldMapBlocks + 1245)"
 DEF G_QH EQUS "(wOverworldMapBlocks + 1246)"
+DEF G_CC EQUS "(wOverworldMapBlocks + 1247)"
+DEF G_SR EQUS "(wOverworldMapBlocks + 1248)"
+DEF G_MINX EQUS "(wOverworldMapBlocks + 1249)"
+DEF G_MAXX EQUS "(wOverworldMapBlocks + 1250)"
+DEF G_MINY EQUS "(wOverworldMapBlocks + 1251)"
+DEF G_MAXY EQUS "(wOverworldMapBlocks + 1252)"
+DEF G_STEPS EQUS "(wOverworldMapBlocks + 1253)"
+DEF G_FL EQUS "(wOverworldMapBlocks + 1254)"
+DEF G_TG EQUS "(wOverworldMapBlocks + 1255)"
+DEF G_FB EQUS "(wOverworldMapBlocks + 1256)"
 DEF G_SEAF EQUS "(wOverworldMapBlocks + 1237)"
 DEF G_SEA EQUS "(wOverworldMapBlocks + 1238)"
 DEF G_TRYW EQUS "(wOverworldMapBlocks + 1240)"
@@ -145,6 +155,8 @@ ProcGenAny::
 	ld a, [wMapNumber]
 	cp MAP_PROC_CAVE
 	jp z, ProcGenCave
+	cp MAP_PROC_FOREST
+	jp z, ProcGenForest
 	cp MAP_PROC_TEST
 	ret nz
 
@@ -1209,7 +1221,14 @@ RPassCave:
 ; and B (south-west of the middle, open ground north of it, rock to its south)
 	ld a, [G_RK]
 	cp 2
+	ld b, PROC_ROCK
+	jr z, .kind
+	cp 1
 	ret nz
+	ld b, PROC_TREE
+.kind
+	ld a, b
+	ld [G_FB], a
 	ld a, [G_RW]
 	srl a
 	ld b, a
@@ -1257,7 +1276,7 @@ RMouth:
 	ld a, $73
 	ld [G_RBLK], a
 	call RClipFill
-	ld a, PROC_ROCK
+	ld a, [G_FB]
 	ld [G_RBLK], a
 	ld a, [G_RX]
 	dec a
@@ -1284,7 +1303,7 @@ RMouth:
 	ld a, [G_RY]
 	add 2
 	ld [G_RY], a
-	ld a, PROC_ROCK
+	ld a, [G_FB]
 	ld [G_RBLK], a
 	jr .done
 .north_mouth
@@ -1297,7 +1316,7 @@ RMouth:
 	ld a, [G_RY]
 	sub 2
 	ld [G_RY], a
-	ld a, PROC_ROCK
+	ld a, [G_FB]
 	ld [G_RBLK], a
 .done
 	call RClipFill
@@ -1562,6 +1581,8 @@ ProcDoorKind:
 	ld a, [wMapNumber]
 	cp MAP_PROC_TEST
 	jr z, .world
+	cp MAP_PROC_FOREST
+	jr z, .forest
 	cp MAP_PROC_CAVE
 	jr nz, .none
 	call ProcBlockUnderPlayer
@@ -1572,6 +1593,17 @@ ProcDoorKind:
 .not_low
 	cp CAVE_LADDER_UP
 	jr nz, .none
+	ld a, 3
+	ret
+.forest
+; the exits of a forest are cave-mouth blocks at its south and north ends
+	call ProcBlockUnderPlayer
+	cp CAVE_DOOR
+	jr nz, .none
+	ld a, c
+	cp 12
+	ld a, 2
+	ret nc
 	ld a, 3
 	ret
 .world
@@ -1619,17 +1651,25 @@ ProcDoorGo::
 	jr z, .low
 	cp 3
 	jr z, .high
-; into the cave. Which mouth? Mouth A has rock to its north.
+; into a cave (rock beside the mouth) or a forest (trees beside it). Which mouth? Mouth B has sand to its north.
 	call ProcBlockUnderPlayer
-	ld a, c
-	dec a
-	ld c, a
+	push bc
+	dec b
 	call ProcBlockAt
 	cp PROC_ROCK
+	ld a, MAP_PROC_CAVE
+	jr z, .gotmap
+	ld a, MAP_PROC_FOREST
+.gotmap
+	ld [wMapNumber], a
+	pop bc
+	dec c
+	call ProcBlockAt
+	cp PROC_SAND
 	push af
 	call ProcPlayerWorld
 	pop af
-	jr z, .from_a
+	jr nz, .from_a
 ; mouth B: A is 6 to the north-east
 	ld a, b
 	add 6
@@ -1641,23 +1681,23 @@ ProcDoorGo::
 	ld [wProcRetU], a
 	ld a, c
 	ld [wProcRetV], a
-	ld a, 20
-	ld [wXCoord], a
+	call ProcSpawnX
 	ld a, 4
 	ld [wYCoord], a
-	jr .cave
+	jr .go
 .from_a
 	ld a, b
 	ld [wProcRetU], a
 	ld a, c
 	ld [wProcRetV], a
-	ld a, 20
-	ld [wXCoord], a
+	call ProcSpawnX
+	ld a, [wMapNumber]
+	cp MAP_PROC_FOREST
 	ld a, 30
+	jr nz, .sy
+	ld a, 42
+.sy
 	ld [wYCoord], a
-.cave
-	ld a, MAP_PROC_CAVE
-	ld [wMapNumber], a
 	jr .go
 .low
 ; out of mouth A: one block south of it
@@ -1714,6 +1754,16 @@ ProcDoorGo::
 	call LoadMapStatus
 	ret
 
+ProcSpawnX:
+	ld a, [wMapNumber]
+	cp MAP_PROC_FOREST
+	ld a, 20
+	jr nz, .set
+	ld a, 24
+.set
+	ld [wXCoord], a
+	ret
+
 ProcDivMod:
 ; a / b: c = quotient, d = remainder
 	ld c, 0
@@ -1765,10 +1815,112 @@ ProcGenCave::
 	ld d, $c4
 	call ProcSeed
 	ld a, 10
-	ld [G_X], a
+	ld [G_CC], a
 	ld a, 15
-	ld [G_Y], a
+	ld [G_SR], a
+	ld a, 3
+	ld [G_MINX], a
+	ld [G_MINY], a
+	ld a, 16
+	ld [G_MAXX], a
+	ld a, 14
+	ld [G_MAXY], a
 	ld a, 220
+	ld [G_STEPS], a
+	ld a, CAVE_FLOOR
+	ld [G_FL], a
+	xor a
+	ld [G_TG], a
+	call ProcWalkMap
+	ld a, 10
+	ld b, 3
+	ld e, CAVE_FLOOR
+	call ProcCaveSet
+	ld a, 10
+	ld b, 2
+	ld e, CAVE_FLOOR
+	call ProcCaveSet
+	ld a, 10
+	ld b, 1
+	ld e, CAVE_LADDER_UP
+	call ProcCaveSet
+	ld a, 10
+	ld b, 16
+	ld e, CAVE_LADDER
+	call ProcCaveSet
+	ld a, 10
+	ld b, 15
+	ld e, CAVE_FLOOR
+	call ProcCaveSet
+	ld a, 10
+	ld b, 14
+	ld e, CAVE_FLOOR
+	jp ProcCaveSet
+
+ProcGenForest::
+; a forest: a field of trees with winding paths and patches of tall grass, a way out at each end
+	ld hl, wOverworldMapBlocks
+	ld bc, 30 * 30
+	ld a, PROC_TREE
+	call ByteFill
+	ld a, [wProcRetU]
+	ld b, a
+	ld a, [wProcRetV]
+	ld c, a
+	ld d, $f7
+	call ProcSeed
+	ld a, 12
+	ld [G_CC], a
+	ld a, 21
+	ld [G_SR], a
+	ld a, 2
+	ld [G_MINX], a
+	ld a, 3
+	ld [G_MINY], a
+	ld a, 21
+	ld [G_MAXX], a
+	ld a, 20
+	ld [G_MAXY], a
+	ld a, 250
+	ld [G_STEPS], a
+	ld a, PROC_GRASS
+	ld [G_FL], a
+	ld a, 1
+	ld [G_TG], a
+	call ProcWalkMap
+	ld a, 12
+	ld b, 3
+	ld e, PROC_GRASS
+	call ProcCaveSet
+	ld a, 12
+	ld b, 2
+	ld e, PROC_GRASS
+	call ProcCaveSet
+	ld a, 12
+	ld b, 1
+	ld e, CAVE_DOOR
+	call ProcCaveSet
+	ld a, 12
+	ld b, 20
+	ld e, PROC_GRASS
+	call ProcCaveSet
+	ld a, 12
+	ld b, 21
+	ld e, PROC_GRASS
+	call ProcCaveSet
+	ld a, 12
+	ld b, 22
+	ld e, CAVE_DOOR
+	jp ProcCaveSet
+
+ProcWalkMap:
+; a drunkard's walk from (G_CC, G_SR) inside the limits G_MINX..G_MAXX, G_MINY..G_MAXY,
+; then a tunnel from where it ended to the middle column and up to row 2
+	ld a, [G_CC]
+	ld [G_X], a
+	ld a, [G_SR]
+	ld [G_Y], a
+	ld a, [G_STEPS]
 	ld [G_I], a
 .step
 	call ProcCaveCarve
@@ -1786,28 +1938,33 @@ ProcGenCave::
 	jr z, .right
 	dec a
 	jr z, .up
-; down
 	ld a, c
-	cp 14
+	ld hl, G_MAXY
+	cp [hl]
 	jr nc, .moved
 	inc c
 	jr .moved
 .left
 	ld a, b
-	cp 3
+	ld hl, G_MINX
+	cp [hl]
 	jr c, .moved
+	jr z, .moved
 	dec b
 	jr .moved
 .right
 	ld a, b
-	cp 16
+	ld hl, G_MAXX
+	cp [hl]
 	jr nc, .moved
 	inc b
 	jr .moved
 .up
 	ld a, c
-	cp 3
+	ld hl, G_MINY
+	cp [hl]
 	jr c, .moved
+	jr z, .moved
 	dec c
 .moved
 	ld a, b
@@ -1818,129 +1975,106 @@ ProcGenCave::
 	dec a
 	ld [G_I], a
 	jr nz, .step
-; join the end of the walk to the top ladder
+; the tunnel
 	ld a, [G_X]
 	ld b, a
 	ld a, [G_Y]
 	ld c, a
 .hj
-	ld a, b
-	cp 10
+	ld a, [G_CC]
+	cp b
 	jr z, .vj
-	jr c, .hr
-	dec b
-	jr .hc
-.hr
+	jr c, .hl
 	inc b
+	jr .hc
+.hl
+	dec b
 .hc
 	push bc
 	ld a, b
 	ld b, c
-	ld e, CAVE_FLOOR
-	call ProcCaveSet
+	call ProcCarveAt
 	pop bc
 	jr .hj
 .vj
 	ld a, c
 	cp 2
-	jr c, .vdone
-	jr z, .vdone
+	ret c
+	ret z
 	dec c
 	push bc
 	ld a, b
 	ld b, c
-	ld e, CAVE_FLOOR
-	call ProcCaveSet
+	call ProcCarveAt
 	pop bc
 	jr .vj
-.vdone
-	ld a, 10
-	ld b, 3
-	ld e, CAVE_FLOOR
-	call ProcCaveSet
-	ld a, 10
-	ld b, 2
-	ld e, CAVE_FLOOR
-	call ProcCaveSet
-	ld a, 10
-	ld b, 1
-	ld e, CAVE_LADDER_UP
-	call ProcCaveSet
-; the ladder out, with floor in front of it
-	ld a, 10
-	ld b, 16
-	ld e, CAVE_LADDER
-	call ProcCaveSet
-	ld a, 10
-	ld b, 15
-	ld e, CAVE_FLOOR
-	call ProcCaveSet
-	ld a, 10
-	ld b, 14
-	ld e, CAVE_FLOOR
-	jp ProcCaveSet
 
 ProcCaveCarve:
-; floor on the walker's block and on a neighbour
-	ld a, [G_X]
-	ld b, a
+; carve the walker's block and sometimes its eastern neighbour
 	ld a, [G_Y]
-	ld e, CAVE_FLOOR
-	push af
-	ld a, b
-	ld c, a
-	pop af
 	ld b, a
-	ld a, c
-	call ProcCaveSet
+	ld a, [G_X]
+	call ProcCarveAt
 	ld b, 2
 	call ProcRandMod
 	and a
 	ret z
 	ld a, [G_X]
 	inc a
-	ld b, a
-	ld a, [G_Y]
+	ld hl, G_MAXX
+	cp [hl]
+	jr c, .ok
+	ret nz
+.ok
 	ld c, a
-	ld a, b
-	ld b, c
-	ld e, CAVE_FLOOR
-	cp 18
-	ret nc
-	jp ProcCaveSet
+	ld a, [G_Y]
+	ld b, a
+	ld a, c
+
+ProcCarveAt:
+; a = column, b = row: open ground (a quarter of it tall grass in forests)
+	push bc
+	push af
+	ld a, [G_FL]
+	ld e, a
+	ld a, [G_TG]
+	and a
+	jr z, .set
+	ld b, 4
+	push de
+	call ProcRandMod
+	pop de
+	and a
+	jr nz, .set
+	ld e, PROC_TALL
+.set
+	pop af
+	pop bc
 
 ProcCaveSet:
-; a = column, b = row (0-based inside the cave), e = block
+; a = column, b = row (0-based inside the map), e = block
 	push de
 	ld c, b
 	ld b, a
+	ld a, [wMapWidth]
+	add 6
+	ld e, a
+	ld d, 0
 	ld hl, wOverworldMapBlocks
 	ld a, c
 	add 3
-	ld d, 0
-	push bc
-	ld c, CAVE_STRIDE
-	ld b, a
+.row
 	and a
 	jr z, .col
-.row
-	ld a, l
-	add c
-	ld l, a
-	jr nc, .nc
-	inc h
-.nc
-	dec b
-	jr nz, .row
+	add hl, de
+	dec a
+	jr .row
 .col
-	pop bc
 	ld a, b
 	add 3
-	add l
-	ld l, a
-	jr nc, .nc2
-	inc h
-.nc2
+	ld e, a
+	ld d, 0
+	add hl, de
 	pop de
 	ld [hl], e
 	ret

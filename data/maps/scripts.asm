@@ -489,4 +489,6 @@ INCLUDE "maps/ProcTest.asm"
 
 INCLUDE "maps/ProcCave.asm"
 
+INCLUDE "maps/ProcForest.asm"
+
 ENDSECTION

@@ -192,6 +192,7 @@ ENDM
 	map_const CINNABAR_ISLAND,                             10,  9 ;  8
 	map_const PROC_TEST,                                   30, 27 ;  9
 	map_const PROC_CAVE,                                   20, 18 ; 10
+	map_const PROC_FOREST,                                 24, 24 ; 11
 	endgroup
 
 	newgroup CERULEAN                                             ;  7
