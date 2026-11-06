@@ -195,6 +195,7 @@ ProcGenMap::
 	call OpenSRAM
 	xor a
 	ld [PX_NSALT], a
+	RForEach RPassWall
 	RForEach RPassGroundR
 	RForEach RPassLaneR
 	RForEach RPassGroundP
@@ -882,6 +883,35 @@ RClipFill:
 	ld b, a
 	ld a, [G_RBLK]
 	jp ProcFillRect
+
+RPassWall:
+; a wall three blocks thick around the rectangle, made of rock for dry, cold and rocky ground
+; and of trees elsewhere
+	ld a, [G_RB]
+	dec a
+	ld e, a
+	ld d, 0
+	ld hl, RWallTab
+	add hl, de
+	ld a, [hl]
+	ld [G_RBLK], a
+	ld a, [G_RX]
+	sub 3
+	ld [G_RX], a
+	ld a, [G_RY]
+	sub 3
+	ld [G_RY], a
+	ld a, [G_RW]
+	add 6
+	ld [G_RW], a
+	ld a, [G_RH]
+	add 6
+	ld [G_RH], a
+	jp RClipFill
+
+; wall block for each biome: meadow, forest, desert, snow, swamp, mountain, sea, highland
+RWallTab:
+	db PROC_TREE, PROC_TREE, PROC_ROCK, PROC_ROCK, PROC_TREE, PROC_ROCK, PROC_TREE, PROC_ROCK
 
 RPassGroundR:
 ; routes first, so that the places can sit on top of them
