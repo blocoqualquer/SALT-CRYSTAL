@@ -92,6 +92,9 @@ DEF G_BIO EQUS "(wOverworldMapBlocks + 1231)"
 DEF G_N EQUS "(wOverworldMapBlocks + 1233)"
 DEF G_SY EQUS "(wOverworldMapBlocks + 1234)"
 DEF G_SH EQUS "(wOverworldMapBlocks + 1235)"
+DEF G_DX EQUS "(wOverworldMapBlocks + 1239)"
+DEF G_DY EQUS "(wOverworldMapBlocks + 1241)"
+DEF G_SX EQUS "(wOverworldMapBlocks + 1242)"
 DEF G_SEAF EQUS "(wOverworldMapBlocks + 1237)"
 DEF G_SEA EQUS "(wOverworldMapBlocks + 1238)"
 DEF G_TRYW EQUS "(wOverworldMapBlocks + 1240)"
@@ -1019,13 +1022,13 @@ RPassLane:
 	jp RClipFill
 
 RPassCave:
-; caves: a cave mouth between two rocks above the road, with open ground in front of it
+; caves have two mouths: A (north-east of the middle, open ground south of it, rock to its north)
+; and B (south-west of the middle, open ground north of it, rock to its south)
 	ld a, [G_RK]
 	cp 2
 	ret nz
 	ld a, [G_RW]
 	srl a
-	add 3
 	ld b, a
 	ld a, [G_RX]
 	add b
@@ -1035,11 +1038,39 @@ RPassCave:
 	ld b, a
 	ld a, [G_RY]
 	add b
-	sub 3
 	ld [G_RY], a
 	ld a, 1
 	ld [G_RW], a
 	ld [G_RH], a
+; mouth A at (+3, -3)
+	ld a, 3
+	ld b, -3
+	call RMouth
+; mouth B at (-3, +3)
+	ld a, -3
+	ld b, 3
+; falls through for B
+
+RMouth:
+; a = dx, b = dy from the middle (G_RX, G_RY): the mouth, a rock on each side, open ground on
+; the side facing the road and a rock on the far side
+	ld [G_DX], a
+	ld a, b
+	ld [G_DY], a
+	ld a, [G_RX]
+	ld [G_SX], a
+	ld a, [G_RY]
+	ld [G_SY], a
+	ld a, [G_DX]
+	ld b, a
+	ld a, [G_RX]
+	add b
+	ld [G_RX], a
+	ld a, [G_DY]
+	ld b, a
+	ld a, [G_RY]
+	add b
+	ld [G_RY], a
 	ld a, $73
 	ld [G_RBLK], a
 	call RClipFill
@@ -1056,13 +1087,42 @@ RPassCave:
 	ld a, [G_RX]
 	dec a
 	ld [G_RX], a
+; the road side is the side facing the middle: dy < 0 means the road is south
+	ld a, [G_DY]
+	bit 7, a
+	jr nz, .north_mouth
+; mouth in the south: sand above, rock below
+	ld a, [G_RY]
+	dec a
+	ld [G_RY], a
+	ld a, PROC_SAND
+	ld [G_RBLK], a
+	call RClipFill
+	ld a, [G_RY]
+	add 2
+	ld [G_RY], a
+	ld a, PROC_ROCK
+	ld [G_RBLK], a
+	jr .done
+.north_mouth
 	ld a, [G_RY]
 	inc a
 	ld [G_RY], a
 	ld a, PROC_SAND
 	ld [G_RBLK], a
-	jp RClipFill
-
+	call RClipFill
+	ld a, [G_RY]
+	sub 2
+	ld [G_RY], a
+	ld a, PROC_ROCK
+	ld [G_RBLK], a
+.done
+	call RClipFill
+	ld a, [G_SX]
+	ld [G_RX], a
+	ld a, [G_SY]
+	ld [G_RY], a
+	ret
 
 ProcHome:
 ; a clearing with the trailhead at the start chunk
@@ -1266,7 +1326,6 @@ ProcRowPtr:
 	ret
 
 
-
 ; ---------------------------------------------------------------------------
 ; doors between the world and the caves
 
@@ -1276,18 +1335,11 @@ DEF CAVE_STRIDE EQU CAVE_W + 6
 DEF CAVE_WALL EQU $2d
 DEF CAVE_FLOOR EQU $02
 DEF CAVE_LADDER EQU $07
+DEF CAVE_LADDER_UP EQU $0b
 DEF CAVE_DOOR EQU $73
 
-ProcBlockUnderPlayer:
-; a = the block the player stands on; b = its column, c = its row in the buffer
-	ld a, [wXCoord]
-	srl a
-	add 3
-	ld b, a
-	ld a, [wYCoord]
-	srl a
-	add 3
-	ld c, a
+ProcBlockAt:
+; b = column, c = row in the buffer; returns a = that block
 	ld a, [wMapWidth]
 	add 6
 	ld e, a
@@ -1307,8 +1359,20 @@ ProcBlockUnderPlayer:
 	ld a, [hl]
 	ret
 
+ProcBlockUnderPlayer:
+; a = the block the player stands on; b = its column, c = its row
+	ld a, [wXCoord]
+	srl a
+	add 3
+	ld b, a
+	ld a, [wYCoord]
+	srl a
+	add 3
+	ld c, a
+	jr ProcBlockAt
+
 ProcDoorKind:
-; a = 1 on a cave mouth in the world, 2 on the ladder of a cave, else 0
+; 1 on a cave mouth in the world, 2 on the lower ladder of a cave, 3 on its upper ladder, else 0
 	ld a, [wMapGroup]
 	cp GROUP_PROC_TEST
 	jr nz, .none
@@ -1319,8 +1383,13 @@ ProcDoorKind:
 	jr nz, .none
 	call ProcBlockUnderPlayer
 	cp CAVE_LADDER
-	jr nz, .none
+	jr nz, .not_low
 	ld a, 2
+	ret
+.not_low
+	cp CAVE_LADDER_UP
+	jr nz, .none
+	ld a, 3
 	ret
 .world
 	call ProcBlockUnderPlayer
@@ -1340,25 +1409,16 @@ ProcDoorCheck::
 	scf
 	ret
 
-ProcDoorGo::
-; the warp itself
-	call ProcDoorKind
-	cp 2
-	jr z, .leave
-; into the cave: remember the way back (one block below the mouth) and the mouth's place in the world
-	ld a, [wXCoord]
-	ld [wProcRetX], a
-	ld a, [wYCoord]
-	add 2
-	ld [wProcRetY], a
+ProcPlayerWorld:
+; the world block the player stands on: b = u, c = v
 	ld a, [wProcChunkX]
 	call ProcChunkBase30
-	ld c, a
+	ld b, a
 	ld a, [wXCoord]
 	srl a
 	add 3
-	add c
-	ld [wProcRetU], a
+	add b
+	ld b, a
 	ld a, [wProcChunkY]
 	call ProcChunkBase27
 	ld c, a
@@ -1366,21 +1426,100 @@ ProcDoorGo::
 	srl a
 	add 3
 	add c
+	ld c, a
+	ret
+
+ProcDoorGo::
+; the warp itself
+	call ProcDoorKind
+	cp 2
+	jr z, .low
+	cp 3
+	jr z, .high
+; into the cave. Which mouth? Mouth A has rock to its north.
+	call ProcBlockUnderPlayer
+	ld a, c
+	dec a
+	ld c, a
+	call ProcBlockAt
+	cp PROC_ROCK
+	push af
+	call ProcPlayerWorld
+	pop af
+	jr z, .from_a
+; mouth B: A is 6 to the north-east
+	ld a, b
+	add 6
+	ld b, a
+	ld a, c
+	sub 6
+	ld c, a
+	ld a, b
+	ld [wProcRetU], a
+	ld a, c
 	ld [wProcRetV], a
-	ld a, MAP_PROC_CAVE
-	ld [wMapNumber], a
+	ld a, 20
+	ld [wXCoord], a
+	ld a, 4
+	ld [wYCoord], a
+	jr .cave
+.from_a
+	ld a, b
+	ld [wProcRetU], a
+	ld a, c
+	ld [wProcRetV], a
 	ld a, 20
 	ld [wXCoord], a
 	ld a, 30
 	ld [wYCoord], a
+.cave
+	ld a, MAP_PROC_CAVE
+	ld [wMapNumber], a
 	jr .go
+.low
+; out of mouth A: one block south of it
+	ld a, [wProcRetU]
+	ld b, a
+	ld a, [wProcRetV]
+	inc a
+	ld c, a
+	jr .leave
+.high
+; out of mouth B: 6 west and 6 south of A, one block north of it
+	ld a, [wProcRetU]
+	sub 6
+	ld b, a
+	ld a, [wProcRetV]
+	add 5
+	ld c, a
 .leave
+; b = u, c = v of the block to appear on
+	ld a, b
+	sub 4
+	ld b, a
+	ld a, c
+	sub 4
+	ld c, a
+	ld a, c
+	ld [G_SY], a
+	ld a, b
+	ld b, 30
+	call ProcDivMod
+	ld a, c
+	ld [wProcChunkX], a
+	ld a, d
+	add a
+	ld [wXCoord], a
+	ld a, [G_SY]
+	ld b, 27
+	call ProcDivMod
+	ld a, c
+	ld [wProcChunkY], a
+	ld a, d
+	add a
+	ld [wYCoord], a
 	ld a, MAP_PROC_TEST
 	ld [wMapNumber], a
-	ld a, [wProcRetX]
-	ld [wXCoord], a
-	ld a, [wProcRetY]
-	ld [wYCoord], a
 .go
 	ld a, GROUP_PROC_TEST
 	ld [wMapGroup], a
@@ -1390,6 +1529,19 @@ ProcDoorGo::
 	ldh [hMapEntryMethod], a
 	ld a, MAPSTATUS_ENTER
 	call LoadMapStatus
+	ret
+
+ProcDivMod:
+; a / b: c = quotient, d = remainder
+	ld c, 0
+.loop
+	cp b
+	jr c, .done
+	sub b
+	inc c
+	jr .loop
+.done
+	ld d, a
 	ret
 
 ProcChunkBase30:
@@ -1483,6 +1635,54 @@ ProcGenCave::
 	dec a
 	ld [G_I], a
 	jr nz, .step
+; join the end of the walk to the top ladder
+	ld a, [G_X]
+	ld b, a
+	ld a, [G_Y]
+	ld c, a
+.hj
+	ld a, b
+	cp 10
+	jr z, .vj
+	jr c, .hr
+	dec b
+	jr .hc
+.hr
+	inc b
+.hc
+	push bc
+	ld a, b
+	ld b, c
+	ld e, CAVE_FLOOR
+	call ProcCaveSet
+	pop bc
+	jr .hj
+.vj
+	ld a, c
+	cp 2
+	jr c, .vdone
+	jr z, .vdone
+	dec c
+	push bc
+	ld a, b
+	ld b, c
+	ld e, CAVE_FLOOR
+	call ProcCaveSet
+	pop bc
+	jr .vj
+.vdone
+	ld a, 10
+	ld b, 3
+	ld e, CAVE_FLOOR
+	call ProcCaveSet
+	ld a, 10
+	ld b, 2
+	ld e, CAVE_FLOOR
+	call ProcCaveSet
+	ld a, 10
+	ld b, 1
+	ld e, CAVE_LADDER_UP
+	call ProcCaveSet
 ; the ladder out, with floor in front of it
 	ld a, 10
 	ld b, 16
