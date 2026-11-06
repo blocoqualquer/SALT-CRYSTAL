@@ -92,6 +92,8 @@ DEF G_BIO EQUS "(wOverworldMapBlocks + 1231)"
 DEF G_N EQUS "(wOverworldMapBlocks + 1233)"
 DEF G_SY EQUS "(wOverworldMapBlocks + 1234)"
 DEF G_SH EQUS "(wOverworldMapBlocks + 1235)"
+DEF G_SEAF EQUS "(wOverworldMapBlocks + 1237)"
+DEF G_SEA EQUS "(wOverworldMapBlocks + 1238)"
 DEF G_TRYW EQUS "(wOverworldMapBlocks + 1240)"
 DEF G_IN EQUS "(wOverworldMapBlocks + 1270)"
 DEF PX_NSALT EQUS "(wOverworldMapBlocks + 1188)"
@@ -578,7 +580,10 @@ RGenEdges:
 	cp b
 	jp nz, .edge
 ; extra loops between places that are not far apart
-	ld a, 3
+	xor a
+	ld [G_SEA], a
+	ld [G_SEAF], a
+	ld a, 16
 	ld [G_T], a
 .extra
 	ld a, [sZone]
@@ -594,9 +599,19 @@ RGenEdges:
 	cp b
 	jr z, .skip
 	call RDist
-	cp 90
+	cp 110
 	jr nc, .skip
+	ld a, [G_SEA]
+	cp 2
+	jr nc, .land
+	ld a, 1
+	ld [G_SEAF], a
+	ld hl, G_SEA
+	inc [hl]
+.land
 	call RAddRoute
+	xor a
+	ld [G_SEAF], a
 .skip
 	ld a, [G_T]
 	dec a
@@ -632,6 +647,12 @@ RAddRoute:
 	add hl, de
 	ld a, [hl]
 	ld [G_RB], a
+	ld a, [G_SEAF]
+	or a
+	jr z, .nosea
+	ld a, 7
+	ld [G_RB], a
+.nosea
 	ld b, 2
 	call ProcRandMod
 	or a
@@ -732,7 +753,7 @@ RRouteBiomes:
 ; limit gives the first block, below the second the second block, else the ground
 RDecorTab:
 	db PROC_GRASS, 30, PROC_TALL, 40, PROC_FLOWERS   ; meadow
-	db PROC_GRASS, 70, PROC_TREE, 85, PROC_TALL      ; forest
+	db PROC_GRASS, 90, PROC_TREE, 120, PROC_TALL     ; forest
 	db PROC_SAND, 14, PROC_ROCK, 14, PROC_ROCK       ; desert
 	db PROC_SNOW, 18, PROC_ROCK, 18, PROC_ROCK       ; snow
 	db PROC_GRASS, 30, PROC_WATER, 100, PROC_TALL    ; swamp
@@ -975,6 +996,9 @@ RPassLane:
 	ld [G_RY], a
 	ld a, [G_SH]
 	ld [G_RH], a
+	ld a, [G_RK]
+	cp 3
+	ret z
 	ld a, [G_RW]
 	srl a
 	ld b, a
