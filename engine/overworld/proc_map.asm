@@ -95,6 +95,10 @@ DEF G_SH EQUS "(wOverworldMapBlocks + 1235)"
 DEF G_DX EQUS "(wOverworldMapBlocks + 1239)"
 DEF G_DY EQUS "(wOverworldMapBlocks + 1241)"
 DEF G_SX EQUS "(wOverworldMapBlocks + 1242)"
+DEF G_QX EQUS "(wOverworldMapBlocks + 1243)"
+DEF G_QY EQUS "(wOverworldMapBlocks + 1244)"
+DEF G_QW EQUS "(wOverworldMapBlocks + 1245)"
+DEF G_QH EQUS "(wOverworldMapBlocks + 1246)"
 DEF G_SEAF EQUS "(wOverworldMapBlocks + 1237)"
 DEF G_SEA EQUS "(wOverworldMapBlocks + 1238)"
 DEF G_TRYW EQUS "(wOverworldMapBlocks + 1240)"
@@ -191,10 +195,13 @@ ProcGenMap::
 	call OpenSRAM
 	xor a
 	ld [PX_NSALT], a
-	RForEach RPassGround
+	RForEach RPassGroundR
+	RForEach RPassLaneR
+	RForEach RPassGroundP
 	RForEach RPassWater
+	RForEach RPassRim
 	call RDecor
-	RForEach RPassLane
+	RForEach RPassLaneP
 	RForEach RPassCave
 	call ProcHome
 	jp CloseSRAM
@@ -309,7 +316,7 @@ RGenPlaces:
 	cp b
 	ret z
 ; a kind of place and its size
-	ld b, 8
+	ld b, 10
 	call ProcRandMod
 	ld e, a
 	ld d, 0
@@ -755,8 +762,9 @@ RKinds:
 	db 12, 14, 11, 11, 3 ; desert
 	db 12, 14, 11, 11, 4 ; snow
 	db 12, 14, 11, 11, 5 ; swamp
+	db 16, 12, 13, 8, 8  ; highland
 RKindPick:
-	db 0, 0, 1, 2, 3, 4, 5, 6
+	db 0, 0, 1, 2, 3, 4, 5, 6, 7, 7
 RRouteBiomes:
 	db 1, 1, 2, 2, 3, 4, 5, 6
 
@@ -770,6 +778,7 @@ RDecorTab:
 	db PROC_GRASS, 30, PROC_WATER, 100, PROC_TALL    ; swamp
 	db PROC_SAND, 60, PROC_ROCK, 60, PROC_ROCK       ; mountain
 	db PROC_WATER, 0, PROC_WATER, 0, PROC_WATER      ; sea
+	db $71, 22, PROC_ROCK, 22, PROC_ROCK             ; highland (raised ground)
 
 ; ---------------------------------------------------------------------------
 ; drawing one chunk
@@ -874,6 +883,18 @@ RClipFill:
 	ld a, [G_RBLK]
 	jp ProcFillRect
 
+RPassGroundR:
+; routes first, so that the places can sit on top of them
+	ld a, [G_RK]
+	inc a
+	ret nz
+	jr RPassGround
+
+RPassGroundP:
+	ld a, [G_RK]
+	inc a
+	ret z
+
 RPassGround:
 	ld a, [G_RB]
 	add $e0
@@ -900,6 +921,127 @@ RPassWater:
 	ld a, PROC_WATER
 	ld [G_RBLK], a
 	jp RClipFill
+
+RPassRim:
+; highlands: a rim of cliff blocks one block inside the rectangle (the cross of road opens it up)
+	ld a, [G_RK]
+	cp 7
+	ret nz
+	ld a, [G_RX]
+	ld [G_QX], a
+	ld a, [G_RY]
+	ld [G_QY], a
+	ld a, [G_RW]
+	ld [G_QW], a
+	ld a, [G_RH]
+	ld [G_QH], a
+; top and bottom edges
+	ld a, [G_QW]
+	sub 4
+	ld d, a
+	ld e, 1
+	ld a, $70
+	ld b, 2
+	ld c, 1
+	call RRimAt
+	ld a, [G_QH]
+	sub 2
+	ld c, a
+	ld a, $72
+	ld b, 2
+	call RRimAt
+; hop-down ledges on both sides of the south gate (a one-way shortcut off the highland)
+	ld a, [G_QW]
+	srl a
+	ld [G_DX], a
+	sub 5
+	ld d, a
+	ld e, 1
+	ld a, [G_QH]
+	sub 2
+	ld c, a
+	ld b, 3
+	ld a, $56
+	call RRimAt
+	ld a, [G_DX]
+	add 3
+	ld b, a
+	ld a, [G_QW]
+	ld hl, G_DX
+	sub [hl]
+	sub 6
+	ld d, a
+	ld e, 1
+	ld a, [G_QH]
+	sub 2
+	ld c, a
+	ld a, $56
+	call RRimAt
+; left and right edges
+	ld a, [G_QH]
+	sub 4
+	ld e, a
+	ld d, 1
+	ld a, $68
+	ld b, 1
+	ld c, 2
+	call RRimAt
+	ld a, [G_QW]
+	sub 2
+	ld b, a
+	ld a, $69
+	ld c, 2
+	call RRimAt
+; corners
+	ld d, 1
+	ld e, 1
+	ld a, $6a
+	ld b, 1
+	ld c, 1
+	call RRimAt
+	ld a, [G_QW]
+	sub 2
+	ld b, a
+	ld a, $6b
+	ld c, 1
+	call RRimAt
+	ld a, [G_QH]
+	sub 2
+	ld c, a
+	ld a, $6d
+	call RRimAt
+	ld b, 1
+	ld a, $6c
+	call RRimAt
+	ld a, [G_QX]
+	ld [G_RX], a
+	ld a, [G_QY]
+	ld [G_RY], a
+	ld a, [G_QW]
+	ld [G_RW], a
+	ld a, [G_QH]
+	ld [G_RH], a
+	ret
+
+RRimAt:
+; a = block, b/c = offset from the rectangle's corner, d/e = size
+	ld [G_RBLK], a
+	ld a, [G_QX]
+	add b
+	ld [G_RX], a
+	ld a, [G_QY]
+	add c
+	ld [G_RY], a
+	ld a, d
+	ld [G_RW], a
+	ld a, e
+	ld [G_RH], a
+	push bc
+	push de
+	call RClipFill
+	pop de
+	pop bc
+	ret
 
 RDecor:
 ; every ground block still marked ($e1-$e7) becomes the biome's ground or its scatter of trees, rocks, ...
@@ -967,6 +1109,17 @@ RDecor:
 	cp PROC_ROWS
 	jr nz, .row
 	ret
+
+RPassLaneR:
+	ld a, [G_RK]
+	inc a
+	ret nz
+	jr RPassLane
+
+RPassLaneP:
+	ld a, [G_RK]
+	inc a
+	ret z
 
 RPassLane:
 ; a 3-wide cross of open ground through the middle of every rectangle (streets in towns)
