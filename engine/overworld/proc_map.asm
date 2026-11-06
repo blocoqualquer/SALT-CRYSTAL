@@ -1273,7 +1273,12 @@ RMouth:
 	ld a, [G_RY]
 	add b
 	ld [G_RY], a
+	ld a, [G_FB]
+	cp PROC_TREE
 	ld a, $73
+	jr nz, .mblk
+	ld a, FOREST_MAT
+.mblk
 	ld [G_RBLK], a
 	call RClipFill
 	ld a, [G_FB]
@@ -1539,6 +1544,7 @@ DEF CAVE_FLOOR EQU $02
 DEF CAVE_LADDER EQU $07
 DEF CAVE_LADDER_UP EQU $0b
 DEF CAVE_DOOR EQU $73
+DEF FOREST_MAT EQU $80
 
 ProcBlockAt:
 ; b = column, c = row in the buffer; returns a = that block
@@ -1596,9 +1602,9 @@ ProcDoorKind:
 	ld a, 3
 	ret
 .forest
-; the exits of a forest are cave-mouth blocks at its south and north ends
+; the exits of a forest are red-mat blocks at its south and north ends
 	call ProcBlockUnderPlayer
-	cp CAVE_DOOR
+	cp FOREST_MAT
 	jr nz, .none
 	ld a, c
 	cp 12
@@ -1609,7 +1615,10 @@ ProcDoorKind:
 .world
 	call ProcBlockUnderPlayer
 	cp CAVE_DOOR
+	jr z, .wdoor
+	cp FOREST_MAT
 	jr nz, .none
+.wdoor
 	ld a, 1
 	ret
 .none
@@ -1898,7 +1907,7 @@ ProcGenForest::
 	call ProcCaveSet
 	ld a, 12
 	ld b, 1
-	ld e, CAVE_DOOR
+	ld e, FOREST_MAT
 	call ProcCaveSet
 	ld a, 12
 	ld b, 20
@@ -1910,7 +1919,7 @@ ProcGenForest::
 	call ProcCaveSet
 	ld a, 12
 	ld b, 22
-	ld e, CAVE_DOOR
+	ld e, FOREST_MAT
 	jp ProcCaveSet
 
 ProcWalkMap:
