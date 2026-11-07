@@ -1055,4 +1055,7 @@ ProcCave_Blocks:
 ProcForest_Blocks:
 	INCBIN "maps/ProcForest.blk"
 
+ProcCity_Blocks:
+	INCBIN "maps/ProcCity.blk"
+
 ENDSECTION

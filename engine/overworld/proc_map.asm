@@ -169,6 +169,8 @@ ProcGenAny::
 	jp z, ProcGenCave
 	cp MAP_PROC_FOREST
 	jp z, ProcGenForest
+	cp MAP_PROC_CITY
+	jp z, ProcGenCity
 	cp MAP_PROC_TEST
 	ret nz
 
@@ -230,6 +232,7 @@ ProcGenMap::
 	RForEach RPassLaneP
 	RForEach RPassCave
 	call ProcHome
+	RForEach RPassTown
 	jp CloseSRAM
 
 ProcWorldEnsure:
@@ -1637,6 +1640,39 @@ RMouth:
 	ld [G_RY], a
 	ret
 
+RPassTown:
+; every town has a little house in the middle of its crossroads: the way into the town map
+	ld a, [G_RK]
+	and a
+	ret nz
+	ld a, [G_RW]
+	srl a
+	ld b, a
+	ld a, [G_RX]
+	add b
+	ld [G_RX], a
+	ld a, [G_RH]
+	srl a
+	ld b, a
+	ld a, [G_RY]
+	add b
+	ld [G_RY], a
+	ld a, 1
+	ld [G_RW], a
+	ld [G_RH], a
+	ld a, $15
+	ld [G_RBLK], a
+	ld a, [G_RX]
+	inc a
+	ld [G_RX], a
+	call RClipFill
+	ld a, [G_RX]
+	dec a
+	ld [G_RX], a
+	ld a, CITY_DOOR
+	ld [G_RBLK], a
+	jp RClipFill
+
 ProcHome:
 ; a clearing with the trailhead at the start chunk
 	ld a, [wProcChunkX]
@@ -1851,6 +1887,7 @@ DEF CAVE_LADDER EQU $07
 DEF CAVE_LADDER_UP EQU $0b
 DEF CAVE_DOOR EQU $73
 DEF FOREST_MAT EQU $80
+DEF CITY_DOOR EQU $14 ; the door block of the house that marks a town in the world
 
 ProcBlockAt:
 ; b = column, c = row in the buffer; returns a = that block
@@ -1895,6 +1932,8 @@ ProcDoorKind:
 	jr z, .world
 	cp MAP_PROC_FOREST
 	jr z, .forest
+	cp MAP_PROC_CITY
+	jr z, .forest
 	cp MAP_PROC_CAVE
 	jr nz, .none
 	call ProcBlockUnderPlayer
@@ -1921,6 +1960,8 @@ ProcDoorKind:
 .world
 	call ProcBlockUnderPlayer
 	cp CAVE_DOOR
+	jr z, .wdoor
+	cp CITY_DOOR
 	jr z, .wdoor
 	cp FOREST_MAT
 	jr nz, .none
@@ -1966,8 +2007,16 @@ ProcDoorGo::
 	jr z, .low
 	cp 3
 	jr z, .high
-; into a cave (rock beside the mouth) or a forest (trees beside it). Which mouth? Mouth B has sand to its north.
+; into a town by the door of its house
 	call ProcBlockUnderPlayer
+	cp CITY_DOOR
+	jr nz, .notcity
+	ld a, MAP_PROC_CITY
+	ld [wMapNumber], a
+	call ProcPlayerWorld
+	jr .from_a
+.notcity
+; into a cave (rock beside the mouth) or a forest (trees beside it). Which mouth? Mouth B has sand to its north.
 	push bc
 	dec b
 	call ProcBlockAt
@@ -2006,6 +2055,10 @@ ProcDoorGo::
 	ld a, c
 	ld [wProcRetV], a
 	call ProcSpawnX
+	ld a, [wMapNumber]
+	cp MAP_PROC_CITY
+	ld a, 42
+	jr z, .sy
 	ld a, [wMapNumber]
 	cp MAP_PROC_FOREST
 	ld a, 30
@@ -2070,6 +2123,10 @@ ProcDoorGo::
 	ret
 
 ProcSpawnX:
+	ld a, [wMapNumber]
+	cp MAP_PROC_CITY
+	ld a, 28
+	jr z, .set
 	ld a, [wMapNumber]
 	cp MAP_PROC_FOREST
 	ld a, 20
@@ -2227,6 +2284,181 @@ ProcGenForest::
 	ld b, 22
 	ld e, FOREST_MAT
 	jp ProcCaveSet
+
+ProcCityPut:
+; a = block, b = dx, c = dy from the house corner (G_X, G_J)
+	push af
+	ld a, [G_X]
+	add b
+	ld b, a
+	ld a, [G_J]
+	add c
+	ld c, a
+	pop af
+	ld de, $0101
+	jp ProcFillRect
+
+ProcCitySlots:
+	db 6, 11, 21, 26
+
+ProcGenCity::
+; a town of 30x24 blocks: grass sprinkled with trees and flowers, a pond, two streets crossed by a
+; third, and up to eight houses facing the streets. Seeded by the door it was entered from.
+	ld hl, wOverworldMapBlocks
+	ld bc, 36 * 30
+	ld a, PROC_TREE
+	call ByteFill
+	ld a, [wProcRetU]
+	ld b, a
+	ld a, [wProcRetV]
+	ld c, a
+	ld d, $c7
+	call ProcSeed
+	ld a, PROC_GRASS
+	ld b, 5
+	ld c, 5
+	ld d, 26
+	ld e, 20
+	call ProcFillRect
+	ld a, 5
+	ld [G_J], a
+.drow
+	ld a, 5
+	ld [G_I], a
+.dcol
+	call ProcRand
+	cp 56
+	jr nc, .dnext
+	ld e, PROC_TREE
+	cp 40
+	jr c, .dput
+	ld e, PROC_FLOWERS
+.dput
+	ld a, [G_I]
+	ld b, a
+	ld a, [G_J]
+	ld c, a
+	ld a, e
+	ld de, $0101
+	call ProcFillRect
+.dnext
+	ld a, [G_I]
+	inc a
+	ld [G_I], a
+	cp 31
+	jr nz, .dcol
+	ld a, [G_J]
+	inc a
+	ld [G_J], a
+	cp 25
+	jr nz, .drow
+; a pond in one of the top corners
+	ld b, 2
+	call ProcRandMod
+	ld b, 6
+	and a
+	jr z, .pond
+	ld b, 22
+.pond
+	ld a, PROC_WATER
+	ld c, 6
+	ld d, 6
+	ld e, 3
+	call ProcFillRect
+; streets: two across, one down to the gate
+	ld a, PROC_SAND
+	ld b, 5
+	ld c, 13
+	ld d, 26
+	ld e, 2
+	call ProcFillRect
+	ld a, PROC_SAND
+	ld b, 5
+	ld c, 20
+	ld d, 26
+	ld e, 2
+	call ProcFillRect
+	ld a, PROC_SAND
+	ld b, 17
+	ld c, 5
+	ld d, 2
+	ld e, 20
+	call ProcFillRect
+; houses: a mart in the first row, a pokemon centre in the second, small houses in the other plots
+	ld a, 11
+	ld [G_J], a
+.hrow
+	xor a
+	ld [G_I], a
+.hslot
+	ld hl, ProcCitySlots
+	ld a, [G_I]
+	add l
+	ld l, a
+	jr nc, .hs
+	inc h
+.hs
+	ld a, [hl]
+	ld [G_X], a
+	ld a, [G_J]
+	cp 11
+	jr nz, .row2
+	ld a, [G_I]
+	cp 1
+	ld a, $17
+	jr z, .big
+	jr .plain
+.row2
+	ld a, [G_I]
+	cp 2
+	ld a, $1b
+	jr z, .big
+.plain
+	ld b, 4
+	call ProcRandMod
+	and a
+	jr z, .hnext
+	ld a, $14
+	ld bc, $0001
+	call ProcCityPut
+	ld a, $15
+	ld bc, $0101
+	call ProcCityPut
+	jr .hnext
+.big
+	push af
+	ld a, $18
+	ld bc, $0000
+	call ProcCityPut
+	ld a, $19
+	ld bc, $0100
+	call ProcCityPut
+	ld a, $1a
+	ld bc, $0001
+	call ProcCityPut
+	pop af
+	ld bc, $0101
+	call ProcCityPut
+.hnext
+	ld a, [G_I]
+	inc a
+	ld [G_I], a
+	cp 4
+	jp nz, .hslot
+	ld a, [G_J]
+	cp 18
+	jr z, .hdone
+	ld a, 18
+	ld [G_J], a
+	jp .hrow
+.hdone
+; the way out: a red mat at the foot of the middle street
+	ld a, FOREST_MAT
+	ld b, 17
+	ld c, 25
+	ld d, 2
+	ld e, 1
+	jp ProcFillRect
 
 ProcWalkMap:
 ; a drunkard's walk from (G_CC, G_SR) inside the limits G_MINX..G_MAXX, G_MINY..G_MAXY,

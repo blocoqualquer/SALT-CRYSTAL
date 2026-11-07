@@ -193,6 +193,7 @@ ENDM
 	map_const PROC_TEST,                                   30, 27 ;  9
 	map_const PROC_CAVE,                                   20, 18 ; 10
 	map_const PROC_FOREST,                                 24, 24 ; 11
+	map_const PROC_CITY,                                   30, 24 ; 12
 	endgroup
 
 	newgroup CERULEAN                                             ;  7

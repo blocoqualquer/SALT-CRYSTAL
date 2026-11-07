@@ -491,4 +491,6 @@ INCLUDE "maps/ProcCave.asm"
 
 INCLUDE "maps/ProcForest.asm"
 
+INCLUDE "maps/ProcCity.asm"
+
 ENDSECTION
