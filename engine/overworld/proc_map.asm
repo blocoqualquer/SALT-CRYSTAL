@@ -112,6 +112,18 @@ DEF G_FB EQUS "(wOverworldMapBlocks + 1256)"
 DEF G_SEAF EQUS "(wOverworldMapBlocks + 1237)"
 DEF G_SEA EQUS "(wOverworldMapBlocks + 1238)"
 DEF G_TRYW EQUS "(wOverworldMapBlocks + 1240)"
+DEF G_L0 EQUS "(wOverworldMapBlocks + 1257)"
+DEF G_L1 EQUS "(wOverworldMapBlocks + 1258)"
+DEF G_L2 EQUS "(wOverworldMapBlocks + 1259)"
+DEF G_L3 EQUS "(wOverworldMapBlocks + 1260)"
+DEF G_L4 EQUS "(wOverworldMapBlocks + 1261)"
+DEF G_L5 EQUS "(wOverworldMapBlocks + 1262)"
+DEF G_L6 EQUS "(wOverworldMapBlocks + 1263)"
+DEF G_L7 EQUS "(wOverworldMapBlocks + 1264)"
+DEF G_L8 EQUS "(wOverworldMapBlocks + 1265)"
+DEF G_LA EQUS "(wOverworldMapBlocks + 1266)"
+DEF G_LB EQUS "(wOverworldMapBlocks + 1267)"
+DEF G_LC EQUS "(wOverworldMapBlocks + 1268)"
 DEF G_IN EQUS "(wOverworldMapBlocks + 1270)"
 DEF PX_NSALT EQUS "(wOverworldMapBlocks + 1188)"
 
@@ -209,6 +221,7 @@ ProcGenMap::
 	ld [PX_NSALT], a
 	RForEach RPassWall
 	RForEach RPassGroundR
+	RForEach RPassSeaR
 	RForEach RPassLaneR
 	RForEach RPassGroundP
 	RForEach RPassWater
@@ -666,7 +679,7 @@ RAddRoute:
 	ld [G_Y2], a
 	ld b, 6
 	call ProcRandMod
-	add 5
+	add 7
 	ld [G_BW], a
 	srl a
 	ld [G_HB], a
@@ -932,6 +945,18 @@ RPassGroundR:
 	ret nz
 	jr RPassGround
 
+RPassSeaR:
+; sea routes are water again after all the ground, so that land routes cross them on a pier
+	ld a, [G_RK]
+	inc a
+	ret nz
+	ld a, [G_RB]
+	cp 7
+	ret nz
+	ld a, PROC_WATER
+	ld [G_RBLK], a
+	jp RClipFill
+
 RPassGroundP:
 	ld a, [G_RK]
 	inc a
@@ -1120,6 +1145,20 @@ RDecor:
 	call ProcNode
 	ld b, a
 	ld a, [G_T]
+	cp 236
+	jr c, .noledge
+	ld a, [G_BIO]
+	cp 2
+	jr nc, .noledge
+	ld a, c
+	and 3
+	cp 2
+	jr nz, .noledge
+; hop-down ledge in a row of 4 blocks (grass areas only)
+	ld a, $56
+	jp .put
+.noledge
+	ld a, [G_T]
 	cp 90
 	jr nc, .sparse
 	ld a, b
@@ -1167,7 +1206,7 @@ RDecor:
 	inc a
 	ld [G_C], a
 	cp PROC_STRIDE
-	jr nz, .col
+	jp nz, .col
 	ld a, [G_R]
 	inc a
 	ld [G_R], a
@@ -1217,6 +1256,14 @@ RPassLane:
 	ld a, PROC_SAND
 .set
 	ld [G_RBLK], a
+	ld a, [G_RK]
+	inc a
+	jp nz, .nw
+	ld a, [G_RB]
+	cp 7
+	ret z
+	jp RWig
+.nw
 	ld a, [G_RY]
 	ld [G_SY], a
 	ld a, [G_RH]
@@ -1247,6 +1294,216 @@ RPassLane:
 	ld a, 3
 	ld [G_RW], a
 	jp RClipFill
+
+RWig:
+; a route's path: 3 blocks wide, it meanders along the long side of the rectangle in steps of 3 blocks.
+; The bend is the sum of two triangle waves (phases from the rectangle's position), never more than
+; one block per step each, so neighbouring steps always touch; it straightens out near both ends so
+; that it meets the places and the other half of the route in the middle.
+	ld a, [G_RW]
+	ld b, a
+	ld a, [G_RH]
+	cp b
+	jr c, .horiz
+	jr z, .horiz
+; vertical: length RH, width RW
+	ld a, 1
+	ld [G_L0], a
+	ld a, [G_RH]
+	ld [G_L1], a
+	ld a, [G_RY]
+	ld [G_L2], a
+	ld a, [G_RW]
+	ld b, a
+	ld a, [G_RX]
+	jr .common
+.horiz
+	xor a
+	ld [G_L0], a
+	ld a, [G_RW]
+	ld [G_L1], a
+	ld a, [G_RX]
+	ld [G_L2], a
+	ld a, [G_RH]
+	ld b, a
+	ld a, [G_RY]
+.common
+; a = start of the cross axis, b = width
+	ld c, a
+	ld a, b
+	sub 3
+	srl a
+	cp 3
+	jr c, .m
+	ld a, 3
+.m
+	ld [G_L6], a
+	ld a, b
+	srl a
+	add c
+	dec a
+	ld [G_L3], a
+	ld a, [G_RX]
+	ld b, a
+	ld a, [G_RY]
+	ld c, a
+	call ProcNode
+	ld b, a
+	and 7
+	ld [G_L4], a
+	ld a, b
+	rrca
+	rrca
+	rrca
+	and 3
+	ld [G_L5], a
+	xor a
+	ld [G_L7], a
+	ld [G_L8], a
+.seg
+	ld a, [G_L1]
+	ld b, a
+	ld a, [G_L7]
+	ld c, a
+	ld a, b
+	sub c
+	ret z
+	ret c
+	cp 3
+	jr c, .len
+	ld a, 3
+.len
+	ld [G_LA], a
+; how far from the nearest end of the rectangle?
+	ld b, a
+	ld a, [G_L7]
+	add b
+	ld c, a
+	ld a, [G_L1]
+	sub c
+	ld b, a
+	ld a, [G_L7]
+	cp b
+	jr c, .dd
+	ld a, b
+.dd
+	ld c, 0
+	cp 6
+	jr c, .lm
+	inc c
+	cp 9
+	jr c, .lm
+	inc c
+	cp 12
+	jr c, .lm
+	inc c
+.lm
+	ld a, [G_L6]
+	cp c
+	jr c, .mm
+	ld a, c
+.mm
+	ld [G_LC], a
+; wave 1: period 8 steps, amplitude 2
+	ld a, [G_L8]
+	ld b, a
+	ld a, [G_L4]
+	add b
+	and 7
+	ld b, a
+	cp 3
+	jr c, .w1a
+	cp 7
+	jr nc, .w1c
+	ld a, 4
+	sub b
+	jr .w1d
+.w1c
+	ld a, -1
+	jr .w1d
+.w1a
+	ld a, b
+.w1d
+	ld c, a
+; wave 2: half speed, period 4, amplitude 1
+	ld a, [G_L8]
+	srl a
+	ld b, a
+	ld a, [G_L5]
+	add b
+	and 3
+	cp 2
+	jr c, .w2d
+	jr z, .w2z
+	ld a, -1
+	jr .w2d
+.w2z
+	xor a
+.w2d
+	add c
+	add 8
+; clamp the bend (biased by 8) to +-G_LC
+	ld b, a
+	ld a, [G_LC]
+	ld c, a
+	ld a, 8
+	add c
+	ld d, a
+	ld a, 8
+	sub c
+	ld e, a
+	ld a, b
+	cp d
+	jr c, .c1
+	jr z, .c1
+	ld a, d
+.c1
+	cp e
+	jr nc, .c2
+	ld a, e
+.c2
+	ld [G_LB], a
+; fill this step
+	ld a, [G_L3]
+	ld b, a
+	ld a, [G_LB]
+	add b
+	sub 8
+	ld c, a
+	ld a, [G_L2]
+	ld b, a
+	ld a, [G_L7]
+	add b
+	ld b, a
+	ld a, [G_L0]
+	and a
+	jr nz, .vert
+	ld a, b
+	ld [G_RX], a
+	ld a, c
+	ld [G_RY], a
+	ld a, [G_LA]
+	ld [G_RW], a
+	ld a, 3
+	ld [G_RH], a
+	jr .fill
+.vert
+	ld a, b
+	ld [G_RY], a
+	ld a, c
+	ld [G_RX], a
+	ld a, [G_LA]
+	ld [G_RH], a
+	ld a, 3
+	ld [G_RW], a
+.fill
+	call RClipFill
+	ld a, [G_L7]
+	add 3
+	ld [G_L7], a
+	ld hl, G_L8
+	inc [hl]
+	jp .seg
 
 RPassCave:
 ; caves have two mouths: A (north-east of the middle, open ground south of it, rock to its north)
