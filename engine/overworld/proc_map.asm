@@ -138,8 +138,8 @@ DEF PX_NSALT EQUS "(wOverworldMapBlocks + 1188)"
 
 DEF ZN_PLACES EQU 2
 DEF ZN_ROUTES EQU 122
-DEF ZN_SIZE   EQU 400
-DEF PROC_MAGIC EQU $ac
+DEF ZN_SIZE   EQU 560
+DEF PROC_MAGIC EQU $ad
 
 MACRO RForEach
 	xor a
@@ -221,8 +221,8 @@ ProcGenMap::
 	ld [PX_NSALT], a
 	RForEach RPassWall
 	RForEach RPassGroundR
-	RForEach RPassSeaR
 	RForEach RPassLaneR
+	RForEach RPassSeaR
 	RForEach RPassGroundP
 	RForEach RPassWater
 	RForEach RPassRim
@@ -321,7 +321,7 @@ RGenPlaces:
 	ld [sZone], a
 	ld b, 6
 	call ProcRandMod
-	add 12
+	add 15
 	ld [G_T], a
 	ld a, 600 % 256
 	ld [G_TRYW], a
@@ -615,7 +615,21 @@ RGenEdges:
 	ld [G_I], a
 	ld a, [G_BJ]
 	ld [G_J], a
+; the last two links of the tree are across the water
+	xor a
+	ld [G_SEAF], a
+	ld a, [sZone]
+	sub 2
+	ld b, a
+	ld a, [G_CNT]
+	cp b
+	jr c, .landlink
+	ld a, 1
+	ld [G_SEAF], a
+.landlink
 	call RAddRoute
+	xor a
+	ld [G_SEAF], a
 	ld a, [G_CNT]
 	inc a
 	ld [G_CNT], a
@@ -627,7 +641,7 @@ RGenEdges:
 	xor a
 	ld [G_SEA], a
 	ld [G_SEAF], a
-	ld a, 16
+	ld a, 32
 	ld [G_T], a
 .extra
 	ld a, [sZone]
@@ -643,10 +657,13 @@ RGenEdges:
 	cp b
 	jr z, .skip
 	call RDist
-	cp 110
+	cp 125
+	jr nc, .skip
+	ld a, [sZone + 1]
+	cp 80
 	jr nc, .skip
 	ld a, [G_SEA]
-	cp 2
+	cp 1
 	jr nc, .land
 	ld a, 1
 	ld [G_SEAF], a
@@ -946,7 +963,7 @@ RPassGroundR:
 	jr RPassGround
 
 RPassSeaR:
-; sea routes are water again after all the ground, so that land routes cross them on a pier
+; sea routes are pure water, drawn over everything the land routes made: crossing one needs Surf
 	ld a, [G_RK]
 	inc a
 	ret nz
