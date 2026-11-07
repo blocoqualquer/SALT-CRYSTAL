@@ -784,14 +784,14 @@ RRouteBiomes:
 ; biome: ground block, then two (limit, block) pairs; a random byte below the first
 ; limit gives the first block, below the second the second block, else the ground
 RDecorTab:
-	db PROC_GRASS, 30, PROC_TALL, 40, PROC_FLOWERS   ; meadow
-	db PROC_GRASS, 90, PROC_TREE, 120, PROC_TALL     ; forest
-	db PROC_SAND, 14, PROC_ROCK, 14, PROC_ROCK       ; desert
-	db PROC_SNOW, 18, PROC_ROCK, 18, PROC_ROCK       ; snow
-	db PROC_GRASS, 30, PROC_WATER, 100, PROC_TALL    ; swamp
-	db PROC_SAND, 60, PROC_ROCK, 60, PROC_ROCK       ; mountain
+	db PROC_GRASS, 110, PROC_TALL, 118, PROC_FLOWERS ; meadow: fields of tall grass
+	db PROC_GRASS, 100, PROC_TREE, 118, PROC_TALL    ; forest: tree clumps
+	db PROC_SAND, 90, PROC_ROCK, 90, PROC_ROCK       ; desert
+	db PROC_SNOW, 90, PROC_ROCK, 90, PROC_ROCK       ; snow
+	db PROC_GRASS, 80, PROC_WATER, 110, PROC_TALL    ; swamp: ponds
+	db PROC_SAND, 100, PROC_ROCK, 100, PROC_ROCK     ; mountain
 	db PROC_WATER, 0, PROC_WATER, 0, PROC_WATER      ; sea
-	db $71, 22, PROC_ROCK, 22, PROC_ROCK             ; highland (raised ground)
+	db $71, 90, PROC_ROCK, 90, PROC_ROCK             ; highland (raised ground)
 
 ; ---------------------------------------------------------------------------
 ; drawing one chunk
@@ -1108,8 +1108,31 @@ RDecor:
 	ld hl, G_R
 	add [hl]
 	ld c, a
+; coarse 4x4 cells decide where the clumps are (dense cell: about 1 in 3), a fine value decides the block
+	push bc
+	srl b
+	srl b
+	srl c
+	srl c
+	call ProcNode
+	ld [G_T], a
+	pop bc
 	call ProcNode
 	ld b, a
+	ld a, [G_T]
+	cp 90
+	jr nc, .sparse
+	ld a, b
+	srl a
+	ld b, a
+	jr .vdone
+.sparse
+	ld a, b
+	cp 4
+	ld b, 255
+	jr nc, .vdone
+	ld b, 0
+.vdone
 	ld a, [G_BIO]
 	ld e, a
 	ld d, 0
@@ -1149,7 +1172,7 @@ RDecor:
 	inc a
 	ld [G_R], a
 	cp PROC_ROWS
-	jr nz, .row
+	jp nz, .row
 	ret
 
 RPassLaneR:
@@ -1183,6 +1206,15 @@ RPassLane:
 	ld de, RDecorTab
 	add hl, de
 	ld a, [hl]
+; on a route the open lane is a pale path, as in Crystal
+	ld b, a
+	ld a, [G_RK]
+	inc a
+	ld a, b
+	jr nz, .set
+	cp PROC_GRASS
+	jr nz, .set
+	ld a, PROC_SAND
 .set
 	ld [G_RBLK], a
 	ld a, [G_RY]
